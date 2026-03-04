@@ -5,6 +5,11 @@ import monacoEditorPlugin from "vite-plugin-monaco-editor";
 const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig(async () => ({
+  test: {
+    environment: "jsdom",
+    globals: true,
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+  },
   plugins: [
     react(),
     (monacoEditorPlugin as unknown as { default: typeof monacoEditorPlugin }).default({
