@@ -386,3 +386,126 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_config() -> ConnectionConfig {
+        ConnectionConfig {
+            host: "localhost".to_string(),
+            port: 8093,
+            username: "Administrator".to_string(),
+            password: "password".to_string(),
+            tls: false,
+        }
+    }
+
+    fn tls_config() -> ConnectionConfig {
+        ConnectionConfig {
+            host: "cb.example.com".to_string(),
+            port: 18093,
+            username: "dev".to_string(),
+            password: "s3cr3t".to_string(),
+            tls: true,
+        }
+    }
+
+    // --- ConnectionConfig::default ---
+
+    #[test]
+    fn connection_config_default_values() {
+        let cfg = ConnectionConfig::default();
+        assert_eq!(cfg.host, "localhost");
+        assert_eq!(cfg.port, 8093);
+        assert_eq!(cfg.username, "Administrator");
+        assert!(!cfg.tls);
+    }
+
+    // --- query_url ---
+
+    #[test]
+    fn query_url_http() {
+        let cfg = test_config();
+        assert_eq!(query_url(&cfg), "http://localhost:8093/query/service");
+    }
+
+    #[test]
+    fn query_url_https() {
+        let cfg = tls_config();
+        assert_eq!(
+            query_url(&cfg),
+            "https://cb.example.com:18093/query/service"
+        );
+    }
+
+    // --- mgmt_url ---
+
+    #[test]
+    fn mgmt_url_http() {
+        let cfg = test_config();
+        assert_eq!(
+            mgmt_url(&cfg, "/pools/default/buckets"),
+            "http://localhost:8091/pools/default/buckets"
+        );
+    }
+
+    #[test]
+    fn mgmt_url_https() {
+        let cfg = tls_config();
+        assert_eq!(
+            mgmt_url(&cfg, "/pools/default/buckets"),
+            "https://cb.example.com:18091/pools/default/buckets"
+        );
+    }
+
+    // --- build_client ---
+
+    #[test]
+    fn build_client_succeeds_for_plain_http() {
+        let cfg = test_config();
+        assert!(build_client(&cfg).is_ok());
+    }
+
+    #[test]
+    fn build_client_succeeds_for_tls() {
+        let cfg = tls_config();
+        assert!(build_client(&cfg).is_ok());
+    }
+
+    // --- AppError Display ---
+
+    #[test]
+    fn app_error_display_http() {
+        let e = AppError::Http("timeout".to_string());
+        assert_eq!(e.to_string(), "HTTP error: timeout");
+    }
+
+    #[test]
+    fn app_error_display_query() {
+        let e = AppError::Query("syntax error".to_string());
+        assert_eq!(e.to_string(), "Query error: syntax error");
+    }
+
+    #[test]
+    fn app_error_display_connection() {
+        let e = AppError::Connection("refused".to_string());
+        assert_eq!(e.to_string(), "Connection error: refused");
+    }
+
+    #[test]
+    fn app_error_display_json() {
+        let e = AppError::Json("invalid token".to_string());
+        assert_eq!(e.to_string(), "JSON error: invalid token");
+    }
+
+    // --- From<serde_json::Error> ---
+
+    #[test]
+    fn app_error_from_serde_json_error() {
+        let json_err: serde_json::Error =
+            serde_json::from_str::<serde_json::Value>("not_json{").unwrap_err();
+        let app_err = AppError::from(json_err);
+        assert!(matches!(app_err, AppError::Json(_)));
+    }
+}
