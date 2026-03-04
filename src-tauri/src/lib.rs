@@ -121,7 +121,7 @@ fn build_client(config: &ConnectionConfig) -> Result<reqwest::Client, AppError> 
 }
 
 #[tauri::command]
-pub async fn execute_query(
+async fn execute_query(
     config: ConnectionConfig,
     request: QueryRequest,
 ) -> Result<QueryResult, AppError> {
@@ -206,7 +206,7 @@ pub async fn execute_query(
 }
 
 #[tauri::command]
-pub async fn get_explain_plan(
+async fn get_explain_plan(
     config: ConnectionConfig,
     statement: String,
 ) -> Result<serde_json::Value, AppError> {
@@ -230,7 +230,7 @@ pub async fn get_explain_plan(
 }
 
 #[tauri::command]
-pub async fn list_buckets(config: ConnectionConfig) -> Result<Vec<BucketInfo>, AppError> {
+async fn list_buckets(config: ConnectionConfig) -> Result<Vec<BucketInfo>, AppError> {
     let client = build_client(&config)?;
     let url = mgmt_url(&config, "/pools/default/buckets");
 
@@ -253,7 +253,7 @@ pub async fn list_buckets(config: ConnectionConfig) -> Result<Vec<BucketInfo>, A
 }
 
 #[tauri::command]
-pub async fn get_keyspace_metadata(
+async fn get_keyspace_metadata(
     config: ConnectionConfig,
     bucket: String,
 ) -> Result<Vec<CollectionSchema>, AppError> {
@@ -306,7 +306,7 @@ pub async fn get_keyspace_metadata(
 }
 
 #[tauri::command]
-pub async fn infer_schema(
+async fn infer_schema(
     config: ConnectionConfig,
     keyspace: String,
 ) -> Result<Vec<SchemaField>, AppError> {
@@ -360,7 +360,7 @@ pub async fn infer_schema(
 }
 
 #[tauri::command]
-pub async fn test_connection(config: ConnectionConfig) -> Result<bool, AppError> {
+async fn test_connection(config: ConnectionConfig) -> Result<bool, AppError> {
     let request = QueryRequest {
         statement: "SELECT 1 AS connected".to_string(),
         timeout: Some("5s".to_string()),
