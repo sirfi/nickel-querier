@@ -29,6 +29,23 @@
   --radius-lg:     10px;
 }
 
+[data-theme="light"] {
+  --bg-base:       #ffffff;
+  --bg-panel:      #f6f8fa;
+  --bg-surface:    #eaeef2;
+  --bg-hover:      #d0d7de;
+  --border:        #d0d7de;
+  --text-primary:  #1f2328;
+  --text-secondary:#636c76;
+  --text-muted:    #9198a1;
+  --accent:        #0969da;
+  --accent-dim:    #0550ae;
+  --success:       #1a7f37;
+  --warning:       #9a6700;
+  --error:         #d1242f;
+  --nickel:        #4a6fa5;
+}
+
 html, body, #root {
   height: 100%;
   overflow: hidden;

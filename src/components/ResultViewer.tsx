@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { QueryResult } from "../lib/types";
 import { JsonView } from "react-json-view-lite";
 import "react-json-view-lite/dist/index.css";
 import "./ResultViewer.css";
 
 type ViewMode = "table" | "json" | "tree";
+type SortDirection = "asc" | "desc";
 
 interface Props {
   result: QueryResult | null;
@@ -12,9 +13,41 @@ interface Props {
   isLoading: boolean;
 }
 
+// ---------- Export helpers ----------
+
+function exportJson(rows: unknown[]): void {
+  const blob = new Blob([JSON.stringify(rows, null, 2)], { type: "application/json" });
+  triggerDownload(blob, "results.json");
+}
+
+function exportCsv(rows: Record<string, unknown>[], columns: string[]): void {
+  const escape = (v: unknown): string => {
+    const s = v === null || v === undefined ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
+    return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const header = columns.map(escape).join(",");
+  const body = rows.map((row) => columns.map((c) => escape(row[c])).join(",")).join("\n");
+  const blob = new Blob([header + "\n" + body], { type: "text/csv" });
+  triggerDownload(blob, "results.csv");
+}
+
+function triggerDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 export default function ResultViewer({ result, error, isLoading }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>("table");
   const [page, setPage] = useState(0);
+  const [sortColumn, setSortColumn] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<SortDirection>("asc");
+  const [filterText, setFilterText] = useState("");
   const PAGE_SIZE = 100;
 
   if (isLoading) {
@@ -44,12 +77,55 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
     );
   }
 
-  const rows = result.results as Record<string, unknown>[];
-  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
-  const pageRows = rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const allRows = result.results as Record<string, unknown>[];
+  const columns = allRows.length > 0 ? Object.keys(allRows[0] ?? {}) : [];
 
-  const columns =
-    rows.length > 0 ? Object.keys(rows[0] ?? {}) : [];
+  const handleSort = (col: string) => {
+    if (sortColumn === col) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortColumn(col);
+      setSortDir("asc");
+    }
+    setPage(0);
+  };
+
+  const handleFilterChange = (v: string) => {
+    setFilterText(v);
+    setPage(0);
+  };
+
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const processedRows = useMemo(() => {
+    let rows = allRows;
+
+    if (filterText.trim()) {
+      const lower = filterText.toLowerCase();
+      rows = rows.filter((row) =>
+        Object.values(row).some((v) =>
+          String(v === null || v === undefined ? "" : typeof v === "object" ? JSON.stringify(v) : v)
+            .toLowerCase()
+            .includes(lower)
+        )
+      );
+    }
+
+    if (sortColumn) {
+      rows = [...rows].sort((a, b) => {
+        const av = a[sortColumn];
+        const bv = b[sortColumn];
+        const as_ = av === null || av === undefined ? "" : typeof av === "object" ? JSON.stringify(av) : String(av);
+        const bs_ = bv === null || bv === undefined ? "" : typeof bv === "object" ? JSON.stringify(bv) : String(bv);
+        const cmp = as_.localeCompare(bs_, undefined, { numeric: true, sensitivity: "base" });
+        return sortDir === "asc" ? cmp : -cmp;
+      });
+    }
+
+    return rows;
+  }, [allRows, filterText, sortColumn, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(processedRows.length / PAGE_SIZE));
+  const pageRows = processedRows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   const renderMetricsBar = () => (
     <div className="rv-metrics">
@@ -76,25 +152,68 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
     </div>
   );
 
+  const renderExportMenu = () => (
+    <div className="rv-export">
+      <button
+        className="btn btn-ghost rv-export-btn"
+        onClick={() => exportJson(allRows)}
+        data-tooltip="Download as JSON"
+      >
+        ↓ JSON
+      </button>
+      <button
+        className="btn btn-ghost rv-export-btn"
+        onClick={() => exportCsv(allRows, columns)}
+        data-tooltip="Download as CSV"
+        disabled={columns.length === 0}
+      >
+        ↓ CSV
+      </button>
+    </div>
+  );
+
   const renderTable = () => {
-    if (rows.length === 0) {
+    if (allRows.length === 0) {
       return <div className="rv-no-rows">No rows returned.</div>;
     }
     if (columns.length === 0) {
       return (
         <div className="rv-json-container">
-          <JsonView data={rows} />
+          <JsonView data={allRows} />
         </div>
       );
     }
     return (
       <div className="rv-table-wrapper">
+        <div className="rv-filter-bar">
+          <input
+            className="input rv-filter-input"
+            type="text"
+            placeholder="Filter rows…"
+            value={filterText}
+            onChange={(e) => handleFilterChange(e.target.value)}
+          />
+          {filterText && (
+            <span className="rv-filter-count">
+              {processedRows.length} / {allRows.length}
+            </span>
+          )}
+        </div>
         <table className="rv-table">
           <thead>
             <tr>
               <th className="rv-th rv-th-row">#</th>
               {columns.map((col) => (
-                <th key={col} className="rv-th">{col}</th>
+                <th
+                  key={col}
+                  className={`rv-th rv-th-sortable${sortColumn === col ? " rv-th-sorted" : ""}`}
+                  onClick={() => handleSort(col)}
+                >
+                  {col}
+                  <span className="rv-sort-icon">
+                    {sortColumn === col ? (sortDir === "asc" ? " ▲" : " ▼") : " ⇅"}
+                  </span>
+                </th>
               ))}
             </tr>
           </thead>
@@ -139,7 +258,7 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
   const renderJson = () => (
     <div className="rv-json-container">
       <pre className="rv-json-raw">
-        {JSON.stringify(rows, null, 2)}
+        {JSON.stringify(allRows, null, 2)}
       </pre>
     </div>
   );
@@ -147,7 +266,7 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
   const renderTree = () => (
     <div className="rv-json-container rv-tree">
       <JsonView
-        data={rows}
+        data={allRows}
         style={{
           container: "rv-json-view",
           basicChildStyle: "rv-json-child",
@@ -173,16 +292,19 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
     <div className="rv-root">
       <div className="rv-header">
         {renderMetricsBar()}
-        <div className="rv-view-toggle">
-          {(["table", "json", "tree"] as ViewMode[]).map((m) => (
-            <button
-              key={m}
-              className={`rv-tab ${viewMode === m ? "active" : ""}`}
-              onClick={() => setViewMode(m)}
-            >
-              {m === "table" ? "⊞ Table" : m === "json" ? "{ } JSON" : "⊵ Tree"}
-            </button>
-          ))}
+        <div className="rv-header-right">
+          {renderExportMenu()}
+          <div className="rv-view-toggle">
+            {(["table", "json", "tree"] as ViewMode[]).map((m) => (
+              <button
+                key={m}
+                className={`rv-tab ${viewMode === m ? "active" : ""}`}
+                onClick={() => setViewMode(m)}
+              >
+                {m === "table" ? "⊞ Table" : m === "json" ? "{ } JSON" : "⊵ Tree"}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       <div className="rv-body">

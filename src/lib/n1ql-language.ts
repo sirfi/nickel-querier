@@ -288,6 +288,34 @@ export function registerN1QLLanguage(monaco: typeof MonacoType): void {
       "editorSuggestWidget.border":  "#30363d",
     },
   });
+
+  // Light theme that matches the app light palette
+  monaco.editor.defineTheme("nickel-light", {
+    base: "vs",
+    inherit: true,
+    rules: [
+      { token: "keyword",    foreground: "cf222e", fontStyle: "bold" },
+      { token: "identifier", foreground: "1f2328" },
+      { token: "string",     foreground: "0550ae" },
+      { token: "number",     foreground: "0550ae" },
+      { token: "comment",    foreground: "636c76", fontStyle: "italic" },
+      { token: "operator",   foreground: "cf222e" },
+      { token: "variable",   foreground: "953800" },
+      { token: "delimiter",  foreground: "1f2328" },
+    ],
+    colors: {
+      "editor.background":           "#ffffff",
+      "editor.foreground":           "#1f2328",
+      "editorLineNumber.foreground": "#9198a1",
+      "editorCursor.foreground":     "#0969da",
+      "editor.selectionBackground":  "#0969da33",
+      "editor.lineHighlightBackground": "#f6f8fa",
+      "editorIndentGuide.background1": "#d0d7de",
+      "editorWidget.background":     "#f6f8fa",
+      "editorSuggestWidget.background": "#f6f8fa",
+      "editorSuggestWidget.border":  "#d0d7de",
+    },
+  });
 }
 
 export { N1QL_KEYWORDS, N1QL_SNIPPETS };

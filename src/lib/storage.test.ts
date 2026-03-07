@@ -19,6 +19,13 @@ import {
   updateConnection,
   loadLastConnectionId,
   saveLastConnectionId,
+  loadTheme,
+  saveTheme,
+  loadEditorFontSize,
+  saveEditorFontSize,
+  EDITOR_FONT_SIZE_MIN,
+  EDITOR_FONT_SIZE_MAX,
+  EDITOR_FONT_SIZE_DEFAULT,
 } from "./storage";
 import type { HistoryEntry, SavedQuery, SavedConnection } from "./types";
 
@@ -297,5 +304,46 @@ describe("loadLastConnectionId / saveLastConnectionId", () => {
   it("persists and retrieves the last connection id", () => {
     saveLastConnectionId("conn-xyz");
     expect(loadLastConnectionId()).toBe("conn-xyz");
+  });
+});
+
+// ---------- Theme ----------
+
+describe("loadTheme / saveTheme", () => {
+  it("returns 'dark' by default", () => {
+    expect(loadTheme()).toBe("dark");
+  });
+
+  it("persists and retrieves 'light' theme", () => {
+    saveTheme("light");
+    expect(loadTheme()).toBe("light");
+  });
+
+  it("persists and retrieves 'dark' theme", () => {
+    saveTheme("dark");
+    expect(loadTheme()).toBe("dark");
+  });
+});
+
+// ---------- Editor Font Size ----------
+
+describe("loadEditorFontSize / saveEditorFontSize", () => {
+  it("returns the default font size when nothing is stored", () => {
+    expect(loadEditorFontSize()).toBe(EDITOR_FONT_SIZE_DEFAULT);
+  });
+
+  it("persists and retrieves a custom font size", () => {
+    saveEditorFontSize(18);
+    expect(loadEditorFontSize()).toBe(18);
+  });
+
+  it("clamps values below the minimum to the minimum", () => {
+    saveEditorFontSize(EDITOR_FONT_SIZE_MIN - 5);
+    expect(loadEditorFontSize()).toBe(EDITOR_FONT_SIZE_MIN);
+  });
+
+  it("clamps values above the maximum to the maximum", () => {
+    saveEditorFontSize(EDITOR_FONT_SIZE_MAX + 5);
+    expect(loadEditorFontSize()).toBe(EDITOR_FONT_SIZE_MAX);
   });
 });

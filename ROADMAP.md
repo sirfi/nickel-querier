@@ -27,13 +27,13 @@ This document tracks completed work and planned features across all versions.
 
 ---
 
-## 🔜 v0.3 — Data & UX (Planned)
+## ✅ v0.3 — Data & UX (Completed)
 
-- [ ] **Export Results** — Download query results as CSV or JSON file
-- [ ] **Dark / Light Theme Toggle** — Persist user's preferred colour scheme across sessions
-- [ ] **Editor Font Size Control** — Increase / decrease Monaco editor font size from the toolbar
-- [ ] **Query Formatting** — Auto-format SQL++ with a single shortcut (`Ctrl/⌘ + Shift + F`)
-- [ ] **Result Column Sorting & Filtering** — Click column headers to sort; type to filter rows in Table view
+- [x] **Export Results** — Download query results as CSV or JSON file
+- [x] **Dark / Light Theme Toggle** — Persist user's preferred colour scheme across sessions
+- [x] **Editor Font Size Control** — Increase / decrease Monaco editor font size from the toolbar
+- [x] **Query Formatting** — Auto-format SQL++ with a single shortcut (`Ctrl/⌘ + Shift + F`)
+- [x] **Result Column Sorting & Filtering** — Click column headers to sort; type to filter rows in Table view
 
 ---
 
