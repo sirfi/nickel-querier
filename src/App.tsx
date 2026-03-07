@@ -16,6 +16,9 @@ import {
   loadConnections,
   saveLastConnectionId,
   loadLastConnectionId,
+  loadTheme,
+  saveTheme,
+  type AppTheme,
 } from "./lib/storage";
 
 import {
@@ -82,6 +85,21 @@ function getInitialConnectionId(): string {
 }
 
 export default function App() {
+  // ---------- Theme ----------
+  const [theme, setTheme] = useState<AppTheme>(() => loadTheme());
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
+
+  const handleThemeToggle = () => {
+    setTheme((prev) => {
+      const next: AppTheme = prev === "dark" ? "light" : "dark";
+      saveTheme(next);
+      return next;
+    });
+  };
+
   // ---------- Connections ----------
   const [connections, setConnections] = useState<SavedConnection[]>(() =>
     loadConnections()
@@ -301,6 +319,13 @@ export default function App() {
           onConnectionsChange={handleConnectionsChange}
         />
         <button
+          className="btn btn-ghost app-theme-toggle"
+          onClick={handleThemeToggle}
+          data-tooltip={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+        >
+          {theme === "dark" ? "☀" : "☾"}
+        </button>
+        <button
           className="btn btn-ghost app-side-toggle"
           onClick={() => setSideOpen((v) => !v)}
           data-tooltip={sideOpen ? "Hide panel" : "Show panel"}
@@ -383,6 +408,7 @@ export default function App() {
               onSave={handleSaveQuery}
               isRunning={activeState.isRunning || activeState.isExplaining}
               schemaFields={activeState.schemaFields}
+              monacoTheme={theme === "light" ? "nickel-light" : "nickel-dark"}
             />
           </div>
 

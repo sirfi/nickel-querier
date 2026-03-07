@@ -8,7 +8,13 @@ const SAVED_KEY = "nq_saved";
 const CONN_KEY = "nq_connection";
 const CONNECTIONS_KEY = "nq_connections";
 const LAST_CONN_ID_KEY = "nq_last_conn_id";
+const THEME_KEY = "nq_theme";
+const EDITOR_FONT_SIZE_KEY = "nq_editor_font_size";
 const MAX_HISTORY = 200;
+
+const EDITOR_FONT_SIZE_MIN = 10;
+const EDITOR_FONT_SIZE_MAX = 28;
+const EDITOR_FONT_SIZE_DEFAULT = 14;
 
 function load<T>(key: string): T | null {
   try {
@@ -157,3 +163,28 @@ export function loadLastConnectionId(): string | null {
 export function saveLastConnectionId(id: string): void {
   save(LAST_CONN_ID_KEY, id);
 }
+
+// ---------- Theme ----------
+
+export type AppTheme = "dark" | "light";
+
+export function loadTheme(): AppTheme {
+  return load<AppTheme>(THEME_KEY) ?? "dark";
+}
+
+export function saveTheme(theme: AppTheme): void {
+  save(THEME_KEY, theme);
+}
+
+// ---------- Editor Font Size ----------
+
+export function loadEditorFontSize(): number {
+  return load<number>(EDITOR_FONT_SIZE_KEY) ?? EDITOR_FONT_SIZE_DEFAULT;
+}
+
+export function saveEditorFontSize(size: number): void {
+  const clamped = Math.min(EDITOR_FONT_SIZE_MAX, Math.max(EDITOR_FONT_SIZE_MIN, size));
+  save(EDITOR_FONT_SIZE_KEY, clamped);
+}
+
+export { EDITOR_FONT_SIZE_MIN, EDITOR_FONT_SIZE_MAX, EDITOR_FONT_SIZE_DEFAULT };

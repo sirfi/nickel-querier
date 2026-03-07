@@ -1,7 +1,14 @@
-import { useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect, useCallback, useState } from "react";
 import MonacoEditor, { OnMount, BeforeMount } from "@monaco-editor/react";
 import { registerN1QLLanguage } from "../lib/n1ql-language";
 import { SchemaField } from "../lib/types";
+import { formatN1QL } from "../lib/n1ql-formatter";
+import {
+  loadEditorFontSize,
+  saveEditorFontSize,
+  EDITOR_FONT_SIZE_MIN,
+  EDITOR_FONT_SIZE_MAX,
+} from "../lib/storage";
 import type * as MonacoType from "monaco-editor";
 import "./QueryEditor.css";
 
@@ -13,6 +20,7 @@ interface Props {
   onSave: () => void;
   isRunning: boolean;
   schemaFields: SchemaField[];
+  monacoTheme?: string;
 }
 
 export default function QueryEditor({
@@ -23,14 +31,32 @@ export default function QueryEditor({
   onSave,
   isRunning,
   schemaFields,
+  monacoTheme = "nickel-dark",
 }: Props) {
   const editorRef = useRef<MonacoType.editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<typeof MonacoType | null>(null);
+  const [fontSize, setFontSize] = useState<number>(() => loadEditorFontSize());
 
   const handleBeforeMount: BeforeMount = (monaco) => {
     monacoRef.current = monaco;
     registerN1QLLanguage(monaco);
   };
+
+  const handleFormat = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const model = editor.getModel();
+    if (!model) return;
+    const current = model.getValue();
+    const formatted = formatN1QL(current);
+    if (formatted !== current) {
+      // Preserve cursor position as best-effort
+      const pos = editor.getPosition();
+      model.setValue(formatted);
+      onChange(formatted);
+      if (pos) editor.setPosition(pos);
+    }
+  }, [onChange]);
 
   const handleMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
@@ -51,6 +77,13 @@ export default function QueryEditor({
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
       onSave();
     });
+    // Ctrl/Cmd + Shift + F to format
+    editor.addCommand(
+      monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyF,
+      () => {
+        handleFormat();
+      }
+    );
   };
 
   // Update schema-based completions when fields change
@@ -80,6 +113,19 @@ export default function QueryEditor({
 
     return () => disposable.dispose();
   }, [schemaFields]);
+
+  // Sync font size changes to editor instance
+  useEffect(() => {
+    editorRef.current?.updateOptions({ fontSize });
+  }, [fontSize]);
+
+  const handleFontSizeChange = (delta: number) => {
+    setFontSize((prev) => {
+      const next = Math.min(EDITOR_FONT_SIZE_MAX, Math.max(EDITOR_FONT_SIZE_MIN, prev + delta));
+      saveEditorFontSize(next);
+      return next;
+    });
+  };
 
   // Get selected text or full value for execution
   const getActiveStatement = useCallback((): string => {
@@ -139,6 +185,32 @@ export default function QueryEditor({
         >
           ✦ Save
         </button>
+        <button
+          className="btn"
+          onClick={handleFormat}
+          data-tooltip="Format Query (Ctrl+Shift+F)"
+        >
+          ⌥ Format
+        </button>
+        <div className="qe-font-size">
+          <button
+            className="btn btn-ghost qe-font-btn"
+            onClick={() => handleFontSizeChange(-1)}
+            disabled={fontSize <= EDITOR_FONT_SIZE_MIN}
+            data-tooltip="Decrease font size"
+          >
+            A−
+          </button>
+          <span className="qe-font-label">{fontSize}px</span>
+          <button
+            className="btn btn-ghost qe-font-btn"
+            onClick={() => handleFontSizeChange(1)}
+            disabled={fontSize >= EDITOR_FONT_SIZE_MAX}
+            data-tooltip="Increase font size"
+          >
+            A+
+          </button>
+        </div>
         <span className="qe-hint">
           Tip: Select text then Run to execute a sub-query
         </span>
@@ -147,13 +219,13 @@ export default function QueryEditor({
         <MonacoEditor
           height="100%"
           language="n1ql"
-          theme="nickel-dark"
+          theme={monacoTheme}
           value={value}
           beforeMount={handleBeforeMount}
           onMount={handleMount}
           onChange={(v) => onChange(v ?? "")}
           options={{
-            fontSize: 14,
+            fontSize,
             fontFamily: "var(--font-mono)",
             fontLigatures: true,
             minimap: { enabled: false },
