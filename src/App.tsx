@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import ConnectionPanel from "./components/ConnectionPanel";
 import QueryEditor from "./components/QueryEditor";
+import QueryTabs from "./components/QueryTabs";
 import ResultViewer from "./components/ResultViewer";
 import QueryHistory from "./components/QueryHistory";
 import SavedQueries from "./components/SavedQueries";
@@ -12,6 +13,9 @@ import {
   loadHistory,
   addHistory,
   loadSavedQueries,
+  loadConnections,
+  saveLastConnectionId,
+  loadLastConnectionId,
 } from "./lib/storage";
 
 import {
@@ -20,6 +24,8 @@ import {
   HistoryEntry,
   SavedQuery,
   SchemaField,
+  SavedConnection,
+  QueryTab,
 } from "./lib/types";
 
 import "./styles/App.css";
@@ -34,32 +40,70 @@ SELECT "Hello from Nickel Querier!" AS greeting,
        NOW_STR() AS ts;
 `;
 
+let tabCounter = 1;
+
+function makeTab(connectionId: string, query = DEFAULT_QUERY): QueryTab {
+  return {
+    id: crypto.randomUUID(),
+    label: `Query ${tabCounter++}`,
+    query,
+    connectionId,
+  };
+}
+
+// Per-tab result state (kept outside component to avoid bloating QueryTab type)
+interface TabState {
+  result: QueryResult | null;
+  queryError: string | null;
+  isRunning: boolean;
+  explainPlan: unknown;
+  isExplaining: boolean;
+  resultTab: ResultTab;
+  schemaFields: SchemaField[];
+}
+
+function emptyTabState(): TabState {
+  return {
+    result: null,
+    queryError: null,
+    isRunning: false,
+    explainPlan: null,
+    isExplaining: false,
+    resultTab: "results",
+    schemaFields: [],
+  };
+}
+
 export default function App() {
-  const [config, setConfig] = useState<ConnectionConfig>({
-    host: "localhost",
-    port: 8093,
-    username: "Administrator",
-    password: "",
-    tls: false,
-  });
+  // ---------- Connections ----------
+  const [connections, setConnections] = useState<SavedConnection[]>(() =>
+    loadConnections()
+  );
 
-  const [query, setQuery] = useState(DEFAULT_QUERY);
-  const [result, setResult] = useState<QueryResult | null>(null);
-  const [queryError, setQueryError] = useState<string | null>(null);
-  const [isRunning, setIsRunning] = useState(false);
+  const getInitialConnectionId = () => {
+    const lastId = loadLastConnectionId();
+    const conns = loadConnections();
+    if (lastId && conns.find((c) => c.id === lastId)) return lastId;
+    return conns[0]?.id ?? "default";
+  };
 
-  const [explainPlan, setExplainPlan] = useState<unknown>(null);
-  const [isExplaining, setIsExplaining] = useState(false);
+  // ---------- Tabs ----------
+  const [tabs, setTabs] = useState<QueryTab[]>(() => [
+    makeTab(getInitialConnectionId()),
+  ]);
+  const [activeTabId, setActiveTabId] = useState<string>(() => tabs[0].id);
 
+  // Per-tab state map
+  const [tabStates, setTabStates] = useState<Record<string, TabState>>(() => ({
+    [tabs[0].id]: emptyTabState(),
+  }));
+
+  // Side panel
   const [sideTab, setSideTab] = useState<SideTab>("schema");
-  const [resultTab, setResultTab] = useState<ResultTab>("results");
+  const [sideOpen, setSideOpen] = useState(true);
 
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [savedQueries, setSavedQueries] = useState<SavedQuery[]>([]);
-  const [schemaFields, setSchemaFields] = useState<SchemaField[]>([]);
-
-  // Show/hide side panel
-  const [sideOpen, setSideOpen] = useState(true);
 
   const editorRootRef = useRef<HTMLDivElement>(null);
 
@@ -68,6 +112,77 @@ export default function App() {
     setSavedQueries(loadSavedQueries());
   }, []);
 
+  // ---------- Helpers ----------
+  const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
+  const activeState = tabStates[activeTabId] ?? emptyTabState();
+
+  const activeConnection: ConnectionConfig = (() => {
+    const conn = connections.find((c) => c.id === activeTab.connectionId);
+    if (conn) return conn;
+    return connections[0] ?? {
+      host: "localhost",
+      port: 8093,
+      username: "Administrator",
+      password: "",
+      tls: false,
+    };
+  })();
+
+  const updateActiveTab = (patch: Partial<QueryTab>) => {
+    setTabs((prev) =>
+      prev.map((t) => (t.id === activeTabId ? { ...t, ...patch } : t))
+    );
+  };
+
+  const updateTabState = (tabId: string, patch: Partial<TabState>) => {
+    setTabStates((prev) => ({
+      ...prev,
+      [tabId]: { ...(prev[tabId] ?? emptyTabState()), ...patch },
+    }));
+  };
+
+  // ---------- Tab management ----------
+  const handleSelectTab = (id: string) => {
+    setActiveTabId(id);
+  };
+
+  const handleAddTab = () => {
+    // New tab inherits the last active connection
+    const connId = activeTab.connectionId;
+    saveLastConnectionId(connId);
+    const newTab = makeTab(connId);
+    setTabs((prev) => [...prev, newTab]);
+    setTabStates((prev) => ({ ...prev, [newTab.id]: emptyTabState() }));
+    setActiveTabId(newTab.id);
+  };
+
+  const handleCloseTab = (id: string) => {
+    setTabs((prev) => {
+      const remaining = prev.filter((t) => t.id !== id);
+      if (remaining.length === 0) return prev; // shouldn't happen
+      if (activeTabId === id) {
+        // Activate a neighbour
+        const idx = prev.findIndex((t) => t.id === id);
+        const next = remaining[Math.min(idx, remaining.length - 1)];
+        setActiveTabId(next.id);
+      }
+      return remaining;
+    });
+    setTabStates((prev) => {
+      const updated = { ...prev };
+      delete updated[id];
+      return updated;
+    });
+  };
+
+  const handleTabConnectionChange = (tabId: string, connectionId: string) => {
+    setTabs((prev) =>
+      prev.map((t) => (t.id === tabId ? { ...t, connectionId } : t))
+    );
+    saveLastConnectionId(connectionId);
+  };
+
+  // ---------- Query execution ----------
   const getActiveStatement = useCallback((): string => {
     const el = editorRootRef.current;
     if (el) {
@@ -75,26 +190,29 @@ export default function App() {
         .getActiveStatement;
       if (fn) return fn();
     }
-    return query;
-  }, [query]);
+    return activeTab.query;
+  }, [activeTab.query]);
 
   const handleRun = useCallback(async () => {
     const stmt = getActiveStatement().trim();
     if (!stmt) return;
+    const tabId = activeTabId;
 
-    setIsRunning(true);
-    setQueryError(null);
-    setResult(null);
-    setResultTab("results");
+    updateTabState(tabId, {
+      isRunning: true,
+      queryError: null,
+      result: null,
+      resultTab: "results",
+    });
 
     const start = Date.now();
     try {
-      const res = await executeQuery(config, {
+      const res = await executeQuery(activeConnection, {
         statement: stmt,
         timeout: "60s",
         scan_consistency: "not_bounded",
       });
-      setResult(res);
+      updateTabState(tabId, { result: res, isRunning: false });
       const entry: HistoryEntry = {
         id: crypto.randomUUID(),
         statement: stmt,
@@ -107,7 +225,7 @@ export default function App() {
       setHistory(loadHistory());
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      setQueryError(msg);
+      updateTabState(tabId, { queryError: msg, isRunning: false });
       const entry: HistoryEntry = {
         id: crypto.randomUUID(),
         statement: stmt,
@@ -119,28 +237,30 @@ export default function App() {
       };
       addHistory(entry);
       setHistory(loadHistory());
-    } finally {
-      setIsRunning(false);
     }
-  }, [config, getActiveStatement]);
+  }, [activeConnection, activeTabId, getActiveStatement]);
 
   const handleExplain = useCallback(async () => {
     const stmt = getActiveStatement().trim();
     if (!stmt) return;
+    const tabId = activeTabId;
 
-    setIsExplaining(true);
-    setExplainPlan(null);
-    setResultTab("explain");
+    updateTabState(tabId, {
+      isExplaining: true,
+      explainPlan: null,
+      resultTab: "explain",
+    });
 
     try {
-      const plan = await getExplainPlan(config, stmt);
-      setExplainPlan(plan);
+      const plan = await getExplainPlan(activeConnection, stmt);
+      updateTabState(tabId, { explainPlan: plan, isExplaining: false });
     } catch (e: unknown) {
-      setExplainPlan({ error: e instanceof Error ? e.message : String(e) });
-    } finally {
-      setIsExplaining(false);
+      updateTabState(tabId, {
+        explainPlan: { error: e instanceof Error ? e.message : String(e) },
+        isExplaining: false,
+      });
     }
-  }, [config, getActiveStatement]);
+  }, [activeConnection, activeTabId, getActiveStatement]);
 
   const handleSaveQuery = () => {
     setSideTab("saved");
@@ -148,11 +268,21 @@ export default function App() {
   };
 
   const handleHistorySelect = (stmt: string) => {
-    setQuery(stmt);
+    updateActiveTab({ query: stmt });
   };
 
   const handleSavedSelect = (stmt: string) => {
-    setQuery(stmt);
+    updateActiveTab({ query: stmt });
+  };
+
+  // ---------- Connection management ----------
+  const handleConnectionsChange = (updated: SavedConnection[]) => {
+    setConnections(updated);
+  };
+
+  const handleConnectionSelect = (id: string) => {
+    // Update the active tab's connection
+    handleTabConnectionChange(activeTabId, id);
   };
 
   return (
@@ -164,7 +294,12 @@ export default function App() {
           <span className="app-brand-name">Nickel Querier</span>
           <span className="app-brand-tagline">SQL+++</span>
         </div>
-        <ConnectionPanel config={config} onChange={setConfig} />
+        <ConnectionPanel
+          connections={connections}
+          selectedId={activeTab.connectionId}
+          onSelect={handleConnectionSelect}
+          onConnectionsChange={handleConnectionsChange}
+        />
         <button
           className="btn btn-ghost app-side-toggle"
           onClick={() => setSideOpen((v) => !v)}
@@ -196,10 +331,12 @@ export default function App() {
             <div className="sidebar-content">
               {sideTab === "schema" && (
                 <SchemaExplorer
-                  config={config}
-                  onFieldsChange={setSchemaFields}
+                  config={activeConnection}
+                  onFieldsChange={(fields) =>
+                    updateTabState(activeTabId, { schemaFields: fields })
+                  }
                   onKeyspaceSelect={(ks) => {
-                    setQuery(`SELECT * FROM \`${ks}\` LIMIT 10;`);
+                    updateActiveTab({ query: `SELECT * FROM \`${ks}\` LIMIT 10;` });
                   }}
                 />
               )}
@@ -215,25 +352,37 @@ export default function App() {
                   queries={savedQueries}
                   onSelect={handleSavedSelect}
                   onRefresh={() => setSavedQueries(loadSavedQueries())}
-                  pendingStatement={query}
+                  pendingStatement={activeTab.query}
                 />
               )}
             </div>
           </aside>
         )}
 
-        {/* Main content: editor + results */}
+        {/* Main content: tabs + editor + results */}
         <main className="app-main">
+          {/* Query tabs bar */}
+          <QueryTabs
+            tabs={tabs}
+            activeId={activeTabId}
+            connections={connections}
+            onSelect={handleSelectTab}
+            onClose={handleCloseTab}
+            onAdd={handleAddTab}
+            onConnectionChange={handleTabConnectionChange}
+          />
+
           {/* Editor pane */}
           <div className="app-editor-pane" ref={editorRootRef}>
             <QueryEditor
-              value={query}
-              onChange={setQuery}
+              key={activeTabId}
+              value={activeTab.query}
+              onChange={(q) => updateActiveTab({ query: q })}
               onRun={handleRun}
               onExplain={handleExplain}
               onSave={handleSaveQuery}
-              isRunning={isRunning || isExplaining}
-              schemaFields={schemaFields}
+              isRunning={activeState.isRunning || activeState.isExplaining}
+              schemaFields={activeState.schemaFields}
             />
           </div>
 
@@ -244,33 +393,39 @@ export default function App() {
           <div className="app-result-pane">
             <div className="result-tabs">
               <button
-                className={`result-tab ${resultTab === "results" ? "active" : ""}`}
-                onClick={() => setResultTab("results")}
+                className={`result-tab ${activeState.resultTab === "results" ? "active" : ""}`}
+                onClick={() =>
+                  updateTabState(activeTabId, { resultTab: "results" })
+                }
               >
                 ⊞ Results
-                {result && (
+                {activeState.result && (
                   <span className="result-tab-count">
-                    {result.metrics.result_count}
+                    {activeState.result.metrics.result_count}
                   </span>
                 )}
               </button>
               <button
-                className={`result-tab ${resultTab === "explain" ? "active" : ""}`}
-                onClick={() => setResultTab("explain")}
+                className={`result-tab ${activeState.resultTab === "explain" ? "active" : ""}`}
+                onClick={() =>
+                  updateTabState(activeTabId, { resultTab: "explain" })
+                }
               >
                 ⚡ Explain
               </button>
             </div>
             <div className="result-body">
-              {resultTab === "results" && (
+              {activeState.resultTab === "results" && (
                 <ResultViewer
-                  result={result}
-                  error={queryError}
-                  isLoading={isRunning}
+                  result={activeState.result}
+                  error={activeState.queryError}
+                  isLoading={activeState.isRunning}
                 />
               )}
-              {resultTab === "explain" && (
-                <ExplainViewer plan={isExplaining ? null : explainPlan} />
+              {activeState.resultTab === "explain" && (
+                <ExplainViewer
+                  plan={activeState.isExplaining ? null : activeState.explainPlan}
+                />
               )}
             </div>
           </div>

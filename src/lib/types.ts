@@ -77,3 +77,24 @@ export interface Tab {
   id: TabId;
   label: string;
 }
+
+// ---------- Saved Connections ----------
+
+export interface SavedConnection {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  tls: boolean;
+}
+
+// ---------- Query Tabs ----------
+
+export interface QueryTab {
+  id: string;
+  label: string;
+  query: string;
+  connectionId: string;
+}
