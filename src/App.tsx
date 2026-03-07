@@ -74,28 +74,28 @@ function emptyTabState(): TabState {
   };
 }
 
+function getInitialConnectionId(): string {
+  const lastId = loadLastConnectionId();
+  const conns = loadConnections();
+  if (lastId && conns.find((c) => c.id === lastId)) return lastId;
+  return conns[0]?.id ?? "default";
+}
+
 export default function App() {
   // ---------- Connections ----------
   const [connections, setConnections] = useState<SavedConnection[]>(() =>
     loadConnections()
   );
 
-  const getInitialConnectionId = () => {
-    const lastId = loadLastConnectionId();
-    const conns = loadConnections();
-    if (lastId && conns.find((c) => c.id === lastId)) return lastId;
-    return conns[0]?.id ?? "default";
-  };
-
   // ---------- Tabs ----------
-  const [tabs, setTabs] = useState<QueryTab[]>(() => [
-    makeTab(getInitialConnectionId()),
-  ]);
-  const [activeTabId, setActiveTabId] = useState<string>(() => tabs[0].id);
+  // Compute the initial tab once so all three state initialisers share the same id.
+  const [initialTab] = useState<QueryTab>(() => makeTab(getInitialConnectionId()));
+  const [tabs, setTabs] = useState<QueryTab[]>(() => [initialTab]);
+  const [activeTabId, setActiveTabId] = useState<string>(() => initialTab.id);
 
   // Per-tab state map
   const [tabStates, setTabStates] = useState<Record<string, TabState>>(() => ({
-    [tabs[0].id]: emptyTabState(),
+    [initialTab.id]: emptyTabState(),
   }));
 
   // Side panel
