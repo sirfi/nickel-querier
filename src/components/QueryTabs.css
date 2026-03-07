@@ -1,0 +1,113 @@
+.query-tabs-bar {
+  display: flex;
+  align-items: stretch;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.query-tabs-bar::-webkit-scrollbar { display: none; }
+
+.query-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  height: 34px;
+  border-right: 1px solid var(--border);
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 12px;
+  transition: background 0.1s, color 0.1s;
+  flex-shrink: 0;
+  min-width: 100px;
+  max-width: 220px;
+}
+.query-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.query-tab.active {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+}
+
+.query-tab-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Connection selector inside the active tab */
+.query-tab-conn-select {
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  color: var(--accent);
+  font-size: 11px;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  outline: none;
+  max-width: 90px;
+  flex-shrink: 0;
+}
+.query-tab-conn-select:focus { border-color: var(--accent-dim); }
+.query-tab-conn-select option { background: var(--bg-panel); }
+
+/* Connection name badge on inactive tabs */
+.query-tab-conn-name {
+  font-size: 10px;
+  color: var(--accent);
+  background: rgba(88, 166, 255, 0.12);
+  border-radius: 4px;
+  padding: 1px 5px;
+  max-width: 70px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.query-tab-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 2px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  transition: color 0.1s, background 0.1s;
+}
+.query-tab-close:hover {
+  color: var(--error);
+  background: rgba(248, 81, 73, 0.1);
+}
+
+.query-tab-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 18px;
+  cursor: pointer;
+  flex-shrink: 0;
+  border-radius: 0;
+  transition: color 0.1s, background 0.1s;
+}
+.query-tab-add:hover {
+  color: var(--accent);
+  background: var(--bg-hover);
+}

@@ -130,7 +130,7 @@
 .app-editor-pane {
   flex: 1;
   overflow: hidden;
-  min-height: 150px;
+  min-height: 120px;
 }
 
 .app-resize-handle {

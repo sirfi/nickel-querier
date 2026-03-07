@@ -13,8 +13,14 @@ import {
   updateSavedQuery,
   loadConnection,
   saveConnection,
+  loadConnections,
+  addConnection,
+  deleteConnection,
+  updateConnection,
+  loadLastConnectionId,
+  saveLastConnectionId,
 } from "./storage";
-import type { HistoryEntry, SavedQuery } from "./types";
+import type { HistoryEntry, SavedQuery, SavedConnection } from "./types";
 
 beforeEach(() => {
   localStorage.clear();
@@ -203,5 +209,93 @@ describe("saveConnection / loadConnection", () => {
     expect(conn.port).toBe(18093);
     expect(conn.username).toBe("dev");
     expect(conn.tls).toBe(true);
+  });
+});
+
+// ---------- Named Connections ----------
+
+describe("loadConnections", () => {
+  it("returns a default connection when nothing is stored", () => {
+    const conns = loadConnections();
+    expect(conns.length).toBeGreaterThan(0);
+    expect(conns[0]).toHaveProperty("id");
+    expect(conns[0]).toHaveProperty("name");
+    expect(conns[0].host).toBe("localhost");
+  });
+
+  it("migrates a legacy single connection on first load", () => {
+    localStorage.setItem(
+      "nq_connection",
+      JSON.stringify({ host: "cb.legacy.io", port: 8093, username: "admin", password: "pw", tls: false })
+    );
+    const conns = loadConnections();
+    expect(conns[0].host).toBe("cb.legacy.io");
+    expect(conns[0].name).toBe("Default");
+  });
+});
+
+describe("addConnection", () => {
+  it("appends a new connection", () => {
+    const before = loadConnections().length;
+    const newConn: SavedConnection = {
+      id: "test-id",
+      name: "Test",
+      host: "cb.test.io",
+      port: 8093,
+      username: "dev",
+      password: "",
+      tls: true,
+    };
+    addConnection(newConn);
+    const after = loadConnections();
+    expect(after.length).toBe(before + 1);
+    expect(after.find((c) => c.id === "test-id")?.name).toBe("Test");
+  });
+});
+
+describe("deleteConnection", () => {
+  it("removes the connection with the given id", () => {
+    const conn: SavedConnection = {
+      id: "del-conn",
+      name: "ToDelete",
+      host: "localhost",
+      port: 8093,
+      username: "u",
+      password: "",
+      tls: false,
+    };
+    addConnection(conn);
+    deleteConnection("del-conn");
+    expect(loadConnections().find((c) => c.id === "del-conn")).toBeUndefined();
+  });
+});
+
+describe("updateConnection", () => {
+  it("updates fields of an existing connection", () => {
+    const conn: SavedConnection = {
+      id: "upd-conn",
+      name: "Original",
+      host: "localhost",
+      port: 8093,
+      username: "u",
+      password: "",
+      tls: false,
+    };
+    addConnection(conn);
+    updateConnection({ ...conn, name: "Renamed", host: "cb.updated.io" });
+    const found = loadConnections().find((c) => c.id === "upd-conn");
+    expect(found?.name).toBe("Renamed");
+    expect(found?.host).toBe("cb.updated.io");
+  });
+});
+
+describe("loadLastConnectionId / saveLastConnectionId", () => {
+  it("returns null when nothing is stored", () => {
+    expect(loadLastConnectionId()).toBeNull();
+  });
+
+  it("persists and retrieves the last connection id", () => {
+    saveLastConnectionId("conn-xyz");
+    expect(loadLastConnectionId()).toBe("conn-xyz");
   });
 });
