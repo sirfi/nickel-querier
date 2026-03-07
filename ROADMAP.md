@@ -27,7 +27,7 @@ This document tracks completed work and planned features across all versions.
 
 ---
 
-## ✅ v0.3 — Data & UX (Completed)
+## ✅ v0.3 — Data & UX (Current Release — v0.3.0)
 
 - [x] **Export Results** — Download query results as CSV or JSON file
 - [x] **Dark / Light Theme Toggle** — Persist user's preferred colour scheme across sessions

@@ -1,6 +1,6 @@
 [package]
 name = "nickel-querier"
-version = "0.1.0"
+version = "0.3.0"
 description = "Nickel Querier — SQL+++ for Couchbase"
 authors = ["Nickel Querier Contributors"]
 edition = "2021"

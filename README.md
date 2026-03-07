@@ -1,5 +1,7 @@
 # ⬡ Nickel Querier — SQL+++ for Couchbase
 
+![Version](https://img.shields.io/badge/version-0.3.0-blue)
+
 A stable, workflow-oriented, cross-platform query tool for **Couchbase N1QL / SQL++**.
 
 Built with **Tauri** (Rust backend) + **Monaco Editor** + **Couchbase Query Service REST API**.
@@ -22,6 +24,11 @@ Built with **Tauri** (Rust backend) + **Monaco Editor** + **Couchbase Query Serv
 - **EXPLAIN Plan Visualisation** — Renders the N1QL query plan as an interactive tree with colour-coded operator nodes (`Scan`, `Join`, `Filter`, `Aggregate`, `Mutate`, `Sort`)
 - **Parameterized Queries** — Pass `$1`, `$name` positional / named parameters via the `args` field
 - **Cross-platform** — Windows, macOS, Linux (via Tauri)
+- **Export Results** — Download query results as CSV or JSON file
+- **Dark / Light Theme Toggle** — Persist user's preferred colour scheme across sessions
+- **Editor Font Size Control** — Increase / decrease Monaco editor font size from the toolbar
+- **Query Formatting** — Auto-format SQL++ with a single shortcut (`Ctrl/⌘ + Shift + F`)
+- **Result Column Sorting & Filtering** — Click column headers to sort; type to filter rows in Table view
 
 ---
 
@@ -126,8 +133,8 @@ The Couchbase Query Service is accessed via HTTP:
 
 See [ROADMAP.md](ROADMAP.md) for the full, versioned roadmap.
 
-**Upcoming highlights:**
-- [ ] Export results to CSV / JSON
-- [ ] Dark / light theme toggle
+**Upcoming highlights (v0.4):**
 - [ ] Index advisor integration (`ADVISE` statement)
 - [ ] Query plan diff comparison
+- [ ] Named parameters UI
+- [ ] Scan consistency picker
