@@ -8,15 +8,17 @@ Built with **Tauri** (Rust backend) + **Monaco Editor** + **Couchbase Query Serv
 
 ## ✨ Features
 
-### MVP
+### Core
 - **Syntax Highlighting & Snippets** — Full N1QL / SQL++ language definition with keyword colouring and 10+ built-in snippets (`select-from`, `upsert-doc`, `explain`, array comprehensions…)
+- **Multi-Tab Query Editor** — Open multiple independent query tabs, each with its own connection, results, and EXPLAIN plan
 - **Query Execution** — Sends statements to the Couchbase Query Service REST API, shows results in real time
 - **JSON / Tree / Table Result Viewer** — Switch between a paginated table view, raw JSON, or an interactive collapsible tree
 - **Query History** — Last 200 queries stored locally; searchable, re-runnable, deletable
 - **Saved Queries** — Name, tag, and organise favourite queries; persistent across sessions
 - **Schema-Aware Autocomplete** — Browses bucket → scope → collection hierarchy via REST; runs `INFER` to populate field completions in the editor
+- **Connection Profiles** — Save and manage multiple named Couchbase cluster connections; per-tab connection switching
 
-### Advanced (Optional)
+### Advanced
 - **EXPLAIN Plan Visualisation** — Renders the N1QL query plan as an interactive tree with colour-coded operator nodes (`Scan`, `Join`, `Filter`, `Aggregate`, `Mutate`, `Sort`)
 - **Parameterized Queries** — Pass `$1`, `$name` positional / named parameters via the `args` field
 - **Cross-platform** — Windows, macOS, Linux (via Tauri)
@@ -29,7 +31,9 @@ Built with **Tauri** (Rust backend) + **Monaco Editor** + **Couchbase Query Serv
 nickel-querier/
 ├── src/                         # React + TypeScript frontend
 │   ├── components/
-│   │   ├── ConnectionPanel.tsx  # Couchbase connection config & test
+│   │   ├── ConnectionPanel.tsx  # Connection selector in top bar
+│   │   ├── ConnectionManager.tsx# Named connection CRUD (add/edit/delete)
+│   │   ├── QueryTabs.tsx        # Multi-tab bar with per-tab connection picker
 │   │   ├── QueryEditor.tsx      # Monaco Editor with N1QL language
 │   │   ├── ResultViewer.tsx     # Table / JSON / Tree result viewer
 │   │   ├── QueryHistory.tsx     # Query history list
@@ -120,9 +124,10 @@ The Couchbase Query Service is accessed via HTTP:
 
 ## 🛣️ Roadmap
 
-- [ ] Multi-tab query editor
+See [ROADMAP.md](ROADMAP.md) for the full, versioned roadmap.
+
+**Upcoming highlights:**
 - [ ] Export results to CSV / JSON
 - [ ] Dark / light theme toggle
-- [ ] Connection profiles (multiple clusters)
 - [ ] Index advisor integration (`ADVISE` statement)
 - [ ] Query plan diff comparison
