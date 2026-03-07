@@ -155,8 +155,12 @@ export function formatN1QL(input: string): string {
   const clauseSorted = [...CLAUSE_KEYWORDS].sort((a, b) => b.length - a.length);
   for (const kw of clauseSorted) {
     const escaped = kw.replace(/ /g, "\\s+");
-    const re = new RegExp(`(?<!\n)\\s+\\b(${escaped})\\b`, "g");
-    sql = sql.replace(re, `\n$1`);
+    // Replace whitespace-before-keyword with newline, but only when not already preceded by a newline.
+    // We split on newlines and re-join to avoid lookbehind assertions.
+    sql = sql
+      .split("\n")
+      .map((line) => line.replace(new RegExp(`\\s+\\b(${escaped})\\b`, "g"), `\n$1`))
+      .join("\n");
   }
 
   // Clean up multiple blank lines

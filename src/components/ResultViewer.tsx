@@ -95,7 +95,6 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
     setPage(0);
   };
 
-  // eslint-disable-next-line react-hooks/rules-of-hooks
   const processedRows = useMemo(() => {
     let rows = allRows;
 
@@ -114,9 +113,9 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
       rows = [...rows].sort((a, b) => {
         const av = a[sortColumn];
         const bv = b[sortColumn];
-        const as_ = av === null || av === undefined ? "" : typeof av === "object" ? JSON.stringify(av) : String(av);
-        const bs_ = bv === null || bv === undefined ? "" : typeof bv === "object" ? JSON.stringify(bv) : String(bv);
-        const cmp = as_.localeCompare(bs_, undefined, { numeric: true, sensitivity: "base" });
+        const aStr = av === null || av === undefined ? "" : typeof av === "object" ? JSON.stringify(av) : String(av);
+        const bStr = bv === null || bv === undefined ? "" : typeof bv === "object" ? JSON.stringify(bv) : String(bv);
+        const cmp = aStr.localeCompare(bStr, undefined, { numeric: true, sensitivity: "base" });
         return sortDir === "asc" ? cmp : -cmp;
       });
     }
