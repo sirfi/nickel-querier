@@ -8,14 +8,28 @@ export interface ConnectionConfig {
   username: string;
   password: string;
   tls: boolean;
+  /** Verify the server certificate when TLS is on (default true) */
+  verify_tls?: boolean;
+  /** Cluster Manager REST port (default 8091 / 18091) */
+  mgmt_port?: number;
+  /** Saved connection id — lets the backend read the password from the keychain */
+  id?: string;
+  keychain?: boolean;
 }
 
 export interface QueryRequest {
   statement: string;
   timeout?: string;
-  scan_consistency?: string;
+  scan_consistency?: ScanConsistency;
+  /** Positional parameters ($1, $2, …) */
   parameters?: unknown[];
+  /** Named parameters ($name), keys with or without `$` */
+  named_parameters?: Record<string, unknown>;
+  /** Used to cancel the request */
+  client_context_id?: string;
 }
+
+export type ScanConsistency = "not_bounded" | "request_plus";
 
 export interface QueryMetrics {
   elapsed_time: string;
@@ -61,6 +75,9 @@ export interface HistoryEntry {
   row_count: number;
   status: "success" | "error";
   error?: string;
+  /** Connection the query ran on (name kept for display if the connection is deleted) */
+  connectionId?: string;
+  connectionName?: string;
 }
 
 export interface SavedQuery {
@@ -86,8 +103,15 @@ export interface SavedConnection {
   host: string;
   port: number;
   username: string;
+  /** Empty when the password is stored in the OS keychain */
   password: string;
   tls: boolean;
+  /** Verify the server certificate when TLS is on (default true) */
+  verify_tls?: boolean;
+  /** Cluster Manager REST port (default 8091 / 18091) */
+  mgmt_port?: number;
+  /** True when the password lives in the OS keychain */
+  keychain?: boolean;
 }
 
 // ---------- Query Tabs ----------
@@ -97,4 +121,7 @@ export interface QueryTab {
   label: string;
   query: string;
   connectionId: string;
+  /** Input values for $1 / $name parameters, keyed "$1" / "$name" */
+  paramValues?: Record<string, string>;
+  scanConsistency?: ScanConsistency;
 }

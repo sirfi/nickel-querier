@@ -27,7 +27,7 @@ This document tracks completed work and planned features across all versions.
 
 ---
 
-## ✅ v0.3 — Data & UX (Current Release — v0.3.0)
+## ✅ v0.3 — Data & UX (Completed)
 
 - [x] **Export Results** — Download query results as CSV or JSON file
 - [x] **Dark / Light Theme Toggle** — Persist user's preferred colour scheme across sessions
@@ -50,20 +50,26 @@ This document tracks completed work and planned features across all versions.
 
 ---
 
-## 🔜 v0.4 — Advanced Query Tooling (Planned)
+## ✅ v0.4 — Advanced Query Tooling & Productivity (Current Release — v0.4.0)
 
-- [ ] **Index Advisor** — Run `ADVISE` on the current statement and display recommended index definitions
+- [x] **Index Advisor** — Run `ADVISE` on the current statement and display recommended index definitions
+- [x] **Index List** — Indexes of each collection in the schema panel (`system:indexes`)
+- [x] **Named Parameters UI** — Parameters panel to fill `$name` / `$1` values before execution
+- [x] **Scan Consistency Picker** — `not_bounded` / `request_plus` per tab
+- [x] **Query Cancellation** — Stop a running query on the server
+- [x] **Run Statement Under Cursor** — Multi-statement scripts run one statement at a time
+- [x] **Persistent Tabs & Resizable Panels**
+- [x] **Document Editor & Row Detail Panel**
+- [x] **Keychain Password Storage & TLS Verification Option**, configurable Management port
+- [x] **Native Save-as Export**, saved-query import/export, connection shown in history
+- [x] **Keyboard Shortcut Cheat-Sheet** (`Ctrl/⌘ + ?`) and keyspace autocomplete
+
+## 🔜 v0.5 — Planned
+
 - [ ] **Query Plan Diff** — Side-by-side comparison of two EXPLAIN plans to evaluate index or query changes
-- [ ] **Named Parameters UI** — Dedicated parameters panel to fill `$name` / `$1` values before execution
-- [ ] **Scan Consistency Picker** — Choose `not_bounded`, `request_plus`, or `at_plus` from the toolbar
-
----
-
-## 🔜 v0.5 — Collaboration & Productivity (Planned)
-
-- [ ] **Query Sharing** — Export a saved query as a shareable JSON snippet or a deep-link URL
+- [ ] **`at_plus` Scan Consistency** — Requires mutation tokens from the KV layer
+- [ ] **Query Sharing** — Deep-link URL for a saved query (JSON file export is done)
 - [ ] **Folder / Tag Organisation** — Group saved queries into nested folders with drag-and-drop
-- [ ] **Keyboard Shortcut Cheat-Sheet** — In-app overlay listing all shortcuts (`Ctrl/⌘ + ?`)
 - [ ] **Clipboard History** — Quick-paste recent query fragments from a side popover
 
 ---

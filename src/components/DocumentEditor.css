@@ -1,0 +1,36 @@
+.de-modal { width: 760px; height: 80vh; }
+.de-keyspace {
+  flex: 1;
+  margin: 0 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.de-keybar { display: flex; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--border); }
+.de-key { flex: 1; font-family: var(--font-mono); }
+.de-text {
+  flex: 1;
+  margin: 0;
+  padding: 10px 16px;
+  border: none;
+  resize: none;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  outline: none;
+}
+.de-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+}
+.de-status { font-size: 12px; color: var(--text-secondary); }
+.de-ok { color: var(--success); }
+.de-error { color: var(--error); }
+.de-info { color: var(--warning); }

@@ -347,3 +347,58 @@ describe("loadEditorFontSize / saveEditorFontSize", () => {
     expect(loadEditorFontSize()).toBe(EDITOR_FONT_SIZE_MAX);
   });
 });
+
+describe("tabs persistence", () => {
+  it("round-trips tabs and the active tab", async () => {
+    const { saveTabs, loadTabs } = await import("./storage");
+    const tabs = [
+      { id: "a", label: "Query 1", query: "SELECT 1", connectionId: "default" },
+      { id: "b", label: "Query 2", query: "SELECT 2", connectionId: "default" },
+    ];
+    saveTabs(tabs, "b");
+    expect(loadTabs()).toEqual({ tabs, activeTabId: "b" });
+  });
+
+  it("ignores malformed data and falls back to the first tab", async () => {
+    const { loadTabs } = await import("./storage");
+    localStorage.setItem("nq_tabs", JSON.stringify({ tabs: [{ id: 1 }], activeTabId: "x" }));
+    expect(loadTabs()).toBeNull();
+    localStorage.setItem("nq_tabs", JSON.stringify({
+      tabs: [{ id: "a", label: "L", query: "", connectionId: "c" }], activeTabId: "gone",
+    }));
+    expect(loadTabs()?.activeTabId).toBe("a");
+  });
+});
+
+describe("layout", () => {
+  it("clamps and round-trips", async () => {
+    const { saveLayout, loadLayout, clampLayout } = await import("./storage");
+    expect(clampLayout({ editorRatio: 2, sidebarWidth: 10 })).toEqual({ editorRatio: 0.85, sidebarWidth: 180 });
+    expect(clampLayout({})).toEqual({ editorRatio: 0.5, sidebarWidth: 260 });
+    saveLayout({ editorRatio: 0.3, sidebarWidth: 300 });
+    expect(loadLayout()).toEqual({ editorRatio: 0.3, sidebarWidth: 300 });
+  });
+});
+
+describe("saved queries import / export", () => {
+  it("round-trips and skips duplicates", async () => {
+    const { addSavedQuery, exportSavedQueries, importSavedQueries, loadSavedQueries } = await import("./storage");
+    localStorage.clear();
+    addSavedQuery({ id: "1", name: "a", statement: "SELECT 1", created_at: "2026-01-01T00:00:00Z", tags: ["x"] });
+    const file = exportSavedQueries(loadSavedQueries());
+    expect(importSavedQueries(file)).toEqual({ added: 0, skipped: 1 });
+
+    localStorage.clear();
+    expect(importSavedQueries(file)).toEqual({ added: 1, skipped: 0 });
+    expect(loadSavedQueries()[0]).toMatchObject({ name: "a", statement: "SELECT 1", tags: ["x"] });
+  });
+
+  it("accepts a plain array and rejects garbage", async () => {
+    const { importSavedQueries } = await import("./storage");
+    localStorage.clear();
+    expect(importSavedQueries(JSON.stringify([{ name: "n", statement: "s" }, { bad: 1 }])))
+      .toEqual({ added: 1, skipped: 1 });
+    expect(() => importSavedQueries("{")).toThrow("not valid JSON");
+    expect(() => importSavedQueries('{"x":1}')).toThrow("No saved queries");
+  });
+});

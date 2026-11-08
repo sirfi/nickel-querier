@@ -1,7 +1,7 @@
 // ============================================================
 // Nickel Querier — Persistence (localStorage fallback for dev)
 // ============================================================
-import { HistoryEntry, SavedQuery, SavedConnection } from "./types";
+import { HistoryEntry, SavedQuery, SavedConnection, QueryTab } from "./types";
 
 const HISTORY_KEY = "nq_history";
 const SAVED_KEY = "nq_saved";
@@ -10,6 +10,8 @@ const CONNECTIONS_KEY = "nq_connections";
 const LAST_CONN_ID_KEY = "nq_last_conn_id";
 const THEME_KEY = "nq_theme";
 const EDITOR_FONT_SIZE_KEY = "nq_editor_font_size";
+const TABS_KEY = "nq_tabs";
+const LAYOUT_KEY = "nq_layout";
 const MAX_HISTORY = 200;
 
 const EDITOR_FONT_SIZE_MIN = 10;
@@ -73,6 +75,59 @@ export function deleteSavedQuery(id: string): void {
 export function updateSavedQuery(updated: SavedQuery): void {
   const saved = loadSavedQueries().map((q) => (q.id === updated.id ? updated : q));
   save(SAVED_KEY, saved);
+}
+
+export const SAVED_QUERIES_EXPORT_FORMAT = "nickel-querier/saved-queries";
+
+/** File contents for exporting saved queries. */
+export function exportSavedQueries(queries: SavedQuery[]): string {
+  return JSON.stringify({ format: SAVED_QUERIES_EXPORT_FORMAT, version: 1, queries }, null, 2);
+}
+
+function isSavedQuery(q: unknown): q is SavedQuery {
+  if (!q || typeof q !== "object") return false;
+  const o = q as Record<string, unknown>;
+  return typeof o.name === "string" && typeof o.statement === "string";
+}
+
+/**
+ * Merge imported queries (an export file, or a plain array) into the saved
+ * list. Entries with the same name and statement as an existing query are
+ * skipped; others get a fresh id.
+ */
+export function importSavedQueries(json: string): { added: number; skipped: number } {
+  let data: unknown;
+  try {
+    data = JSON.parse(json);
+  } catch {
+    throw new Error("The file is not valid JSON");
+  }
+  const list = Array.isArray(data)
+    ? data
+    : data && typeof data === "object" && Array.isArray((data as { queries?: unknown }).queries)
+      ? (data as { queries: unknown[] }).queries
+      : null;
+  if (!list) throw new Error("No saved queries found in the file");
+
+  const existing = loadSavedQueries();
+  const seen = new Set(existing.map((q) => `${q.name}\u0000${q.statement}`));
+  const added: SavedQuery[] = [];
+  let skipped = 0;
+  for (const raw of list) {
+    if (!isSavedQuery(raw)) { skipped++; continue; }
+    const key = `${raw.name}\u0000${raw.statement}`;
+    if (seen.has(key)) { skipped++; continue; }
+    seen.add(key);
+    added.push({
+      id: crypto.randomUUID(),
+      name: raw.name,
+      statement: raw.statement,
+      created_at: typeof raw.created_at === "string" ? raw.created_at : new Date().toISOString(),
+      tags: Array.isArray(raw.tags) ? raw.tags.filter((t): t is string => typeof t === "string") : [],
+    });
+  }
+  save(SAVED_KEY, [...added, ...existing]);
+  return { added: added.length, skipped };
 }
 
 // ---------- Connection Config (legacy single-connection) ----------
@@ -162,6 +217,73 @@ export function loadLastConnectionId(): string | null {
 
 export function saveLastConnectionId(id: string): void {
   save(LAST_CONN_ID_KEY, id);
+}
+
+// ---------- Open Tabs ----------
+
+export interface StoredTabs {
+  tabs: QueryTab[];
+  activeTabId: string;
+}
+
+function isQueryTab(t: unknown): t is QueryTab {
+  if (!t || typeof t !== "object") return false;
+  const o = t as Record<string, unknown>;
+  return typeof o.id === "string" && typeof o.label === "string" &&
+    typeof o.query === "string" && typeof o.connectionId === "string";
+}
+
+/** Restore open tabs. Returns null when nothing (valid) was stored. */
+export function loadTabs(): StoredTabs | null {
+  const stored = load<StoredTabs>(TABS_KEY);
+  if (!stored || !Array.isArray(stored.tabs)) return null;
+  const tabs = stored.tabs.filter(isQueryTab);
+  if (tabs.length === 0) return null;
+  const activeTabId = tabs.some((t) => t.id === stored.activeTabId)
+    ? stored.activeTabId
+    : tabs[0].id;
+  return { tabs, activeTabId };
+}
+
+export function saveTabs(tabs: QueryTab[], activeTabId: string): void {
+  save<StoredTabs>(TABS_KEY, {
+    tabs: tabs.map(({ id, label, query, connectionId, paramValues, scanConsistency }) => ({
+      id, label, query, connectionId, paramValues, scanConsistency,
+    })),
+    activeTabId,
+  });
+}
+
+// ---------- Layout ----------
+
+export interface Layout {
+  /** Editor share of the editor+results height, 0.15 – 0.85 */
+  editorRatio: number;
+  /** Sidebar width in px */
+  sidebarWidth: number;
+}
+
+export const DEFAULT_LAYOUT: Layout = { editorRatio: 0.5, sidebarWidth: 260 };
+export const SIDEBAR_MIN = 180;
+export const SIDEBAR_MAX = 600;
+
+export function clampLayout(l: Partial<Layout>): Layout {
+  const ratio = Number(l.editorRatio);
+  const width = Number(l.sidebarWidth);
+  return {
+    editorRatio: Number.isFinite(ratio) ? Math.min(0.85, Math.max(0.15, ratio)) : DEFAULT_LAYOUT.editorRatio,
+    sidebarWidth: Number.isFinite(width)
+      ? Math.round(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, width)))
+      : DEFAULT_LAYOUT.sidebarWidth,
+  };
+}
+
+export function loadLayout(): Layout {
+  return clampLayout(load<Partial<Layout>>(LAYOUT_KEY) ?? {});
+}
+
+export function saveLayout(layout: Layout): void {
+  save(LAYOUT_KEY, clampLayout(layout));
 }
 
 // ---------- Theme ----------

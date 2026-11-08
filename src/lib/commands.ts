@@ -12,7 +12,7 @@ import {
 import type { KeyspaceRef } from "./keyspace";
 
 // Detect whether we're running inside Tauri or a plain browser
-const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+export const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 /**
  * Rust `AppError` values are serialized as `{ "Query": "msg" }` etc.
@@ -90,6 +90,32 @@ export async function inferSchema(
     scope: keyspace.scope,
     collection: keyspace.collection,
   });
+}
+
+/** Stop a running request. Resolves true if a request was found and stopped. */
+export async function cancelQuery(
+  config: ConnectionConfig,
+  clientContextId: string
+): Promise<boolean> {
+  return invoke<boolean>("cancel_query", { config, clientContextId });
+}
+
+export async function setConnectionSecret(id: string, password: string): Promise<void> {
+  return invoke<void>("set_connection_secret", { id, password });
+}
+
+export async function deleteConnectionSecret(id: string): Promise<void> {
+  return invoke<void>("delete_connection_secret", { id });
+}
+
+/** Native "Save as" dialog; resolves to the chosen path or null if cancelled. */
+export async function exportFile(
+  defaultName: string,
+  contents: string,
+  filterName: string,
+  extensions: string[]
+): Promise<string | null> {
+  return invoke<string | null>("export_file", { defaultName, contents, filterName, extensions });
 }
 
 export async function testConnection(

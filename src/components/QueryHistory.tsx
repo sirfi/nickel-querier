@@ -7,15 +7,20 @@ interface Props {
   entries: HistoryEntry[];
   onSelect: (statement: string) => void;
   onRefresh: () => void;
+  currentConnectionId?: string;
 }
 
-export default function QueryHistory({ entries, onSelect, onRefresh }: Props) {
+export default function QueryHistory({ entries, onSelect, onRefresh, currentConnectionId }: Props) {
   const [search, setSearch] = useState("");
+  const [onlyThisConnection, setOnlyThisConnection] = useState(false);
 
+  const needle = search.toLowerCase();
   const filtered = entries.filter(
     (e) =>
-      e.statement.toLowerCase().includes(search.toLowerCase()) ||
-      (e.error ?? "").toLowerCase().includes(search.toLowerCase())
+      (!onlyThisConnection || e.connectionId === currentConnectionId) &&
+      (e.statement.toLowerCase().includes(needle) ||
+        (e.error ?? "").toLowerCase().includes(needle) ||
+        (e.connectionName ?? "").toLowerCase().includes(needle))
   );
 
   const handleClearAll = () => {
@@ -46,6 +51,14 @@ export default function QueryHistory({ entries, onSelect, onRefresh }: Props) {
           ✕ Clear
         </button>
       </div>
+      <label className="qh-filter">
+        <input
+          type="checkbox"
+          checked={onlyThisConnection}
+          onChange={(e) => setOnlyThisConnection(e.target.checked)}
+        />
+        Only this tab's connection
+      </label>
 
       {filtered.length === 0 ? (
         <div className="qh-empty">
@@ -74,6 +87,9 @@ export default function QueryHistory({ entries, onSelect, onRefresh }: Props) {
                   {entry.status}
                 </span>
                 <span>{formatRelativeTime(entry.executed_at)}</span>
+                {entry.connectionName && (
+                  <span className="qh-conn" title="Connection">{entry.connectionName}</span>
+                )}
                 {entry.row_count > 0 && (
                   <span>{entry.row_count.toLocaleString()} rows</span>
                 )}

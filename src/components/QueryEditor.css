@@ -68,3 +68,15 @@
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+.qe-select {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px 6px;
+}
+
+.qe-running-statement { background: rgba(88, 166, 255, 0.18); }

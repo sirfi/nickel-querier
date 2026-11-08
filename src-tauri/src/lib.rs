@@ -15,8 +15,35 @@ pub enum AppError {
 
 impl From<reqwest::Error> for AppError {
     fn from(e: reqwest::Error) -> Self {
-        AppError::Http(e.to_string())
+        AppError::Http(describe_reqwest_error(&e))
     }
+}
+
+/// reqwest's Display hides the root cause ("error sending request"); walk the
+/// source chain and add hints for the common TLS / connection problems.
+fn describe_reqwest_error(e: &reqwest::Error) -> String {
+    let mut parts = vec![e.to_string()];
+    let mut source = std::error::Error::source(e);
+    while let Some(s) = source {
+        let text = s.to_string();
+        if !parts.iter().any(|p| p.contains(&text)) {
+            parts.push(text);
+        }
+        source = s.source();
+    }
+    let mut msg = parts.join(": ");
+    let lower = msg.to_lowercase();
+    if lower.contains("certificate") || lower.contains("unknownissuer") {
+        msg.push_str(
+            " — the server certificate could not be verified. For self-signed certificates, \
+             turn off \"Verify TLS certificate\" in the connection settings.",
+        );
+    } else if e.is_connect() {
+        msg.push_str(" — check host, port and TLS settings.");
+    } else if e.is_timeout() {
+        msg.push_str(" — the server did not respond in time.");
+    }
+    msg
 }
 
 impl From<serde_json::Error> for AppError {
@@ -30,8 +57,21 @@ pub struct ConnectionConfig {
     pub host: String,
     pub port: u16,
     pub username: String,
+    #[serde(default)]
     pub password: String,
     pub tls: bool,
+    /// Verify the server certificate when `tls` is on (off for self-signed certs).
+    #[serde(default = "default_true")]
+    pub verify_tls: bool,
+    /// Cluster Manager (REST) port; defaults to 8091 / 18091.
+    #[serde(default)]
+    pub mgmt_port: Option<u16>,
+    /// Saved-connection id; used to look the password up in the OS keychain.
+    #[serde(default)]
+    pub id: Option<String>,
+    /// True when the password lives in the OS keychain instead of `password`.
+    #[serde(default)]
+    pub keychain: bool,
 }
 
 impl Default for ConnectionConfig {
@@ -42,16 +82,81 @@ impl Default for ConnectionConfig {
             username: "Administrator".to_string(),
             password: "password".to_string(),
             tls: false,
+            verify_tls: true,
+            mgmt_port: None,
+            id: None,
+            keychain: false,
         }
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+fn default_true() -> bool {
+    true
+}
+
+// ---------- OS keychain ----------
+
+const KEYRING_SERVICE: &str = "com.nickel-querier.app";
+
+fn keyring_entry(id: &str) -> Result<keyring::Entry, AppError> {
+    keyring::Entry::new(KEYRING_SERVICE, &format!("connection:{}", id))
+        .map_err(|e| AppError::Connection(format!("Keychain unavailable: {}", e)))
+}
+
+/// Fill in the password from the keychain when the config says it lives there.
+fn resolve_config(mut config: ConnectionConfig) -> Result<ConnectionConfig, AppError> {
+    if config.keychain && config.password.is_empty() {
+        if let Some(id) = config.id.clone() {
+            config.password = keyring_entry(&id)?.get_password().map_err(|e| {
+                AppError::Connection(format!(
+                    "Could not read the password from the keychain ({}). Edit the connection and enter it again.",
+                    e
+                ))
+            })?;
+        }
+    }
+    Ok(config)
+}
+
+/// Store a connection password in the OS keychain.
+#[tauri::command]
+async fn set_connection_secret(id: String, password: String) -> Result<(), AppError> {
+    tokio::task::spawn_blocking(move || {
+        keyring_entry(&id)?
+            .set_password(&password)
+            .map_err(|e| AppError::Connection(format!("Keychain unavailable: {}", e)))
+    })
+    .await
+    .map_err(|e| AppError::Connection(e.to_string()))?
+}
+
+/// Remove a connection password from the OS keychain (missing entries are fine).
+#[tauri::command]
+async fn delete_connection_secret(id: String) -> Result<(), AppError> {
+    tokio::task::spawn_blocking(move || match keyring_entry(&id)?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(AppError::Connection(format!("Keychain unavailable: {}", e))),
+    })
+    .await
+    .map_err(|e| AppError::Connection(e.to_string()))?
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct QueryRequest {
     pub statement: String,
+    #[serde(default)]
     pub timeout: Option<String>,
+    #[serde(default)]
     pub scan_consistency: Option<String>,
+    /// Positional parameters (`$1`, `$2`, …) sent as `args`.
+    #[serde(default)]
     pub parameters: Option<serde_json::Value>,
+    /// Named parameters (`$name`); keys may be given with or without `$`.
+    #[serde(default)]
+    pub named_parameters: Option<serde_json::Map<String, serde_json::Value>>,
+    /// Identifier used to cancel the request via `system:active_requests`.
+    #[serde(default)]
+    pub client_context_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -104,7 +209,9 @@ fn query_url(config: &ConnectionConfig) -> String {
 /// Build the base URL for the Management API
 fn mgmt_url(config: &ConnectionConfig, path: &str) -> String {
     let scheme = if config.tls { "https" } else { "http" };
-    let port = if config.tls { 18091 } else { 8091 };
+    let port = config
+        .mgmt_port
+        .unwrap_or(if config.tls { 18091 } else { 8091 });
     format!("{}://{}:{}{}", scheme, config.host, port, path)
 }
 
@@ -113,7 +220,7 @@ fn build_client(config: &ConnectionConfig) -> Result<reqwest::Client, AppError> 
         .connect_timeout(std::time::Duration::from_secs(10))
         // Generous upper bound; the per-query timeout is enforced by the server.
         .timeout(std::time::Duration::from_secs(15 * 60));
-    let builder = if config.tls {
+    let builder = if config.tls && !config.verify_tls {
         builder.danger_accept_invalid_certs(true)
     } else {
         builder
@@ -128,21 +235,10 @@ async fn execute_query(
     config: ConnectionConfig,
     request: QueryRequest,
 ) -> Result<QueryResult, AppError> {
+    let config = resolve_config(config)?;
     let client = build_client(&config)?;
 
-    let mut body = serde_json::json!({
-        "statement": request.statement,
-    });
-
-    if let Some(timeout) = &request.timeout {
-        body["timeout"] = serde_json::Value::String(timeout.clone());
-    }
-    if let Some(scan_consistency) = &request.scan_consistency {
-        body["scan_consistency"] = serde_json::Value::String(scan_consistency.clone());
-    }
-    if let Some(params) = &request.parameters {
-        body["args"] = params.clone();
-    }
+    let body = build_query_body(&request);
 
     let response = client
         .post(query_url(&config))
@@ -154,6 +250,32 @@ async fn execute_query(
     let http_status = response.status().as_u16();
     let text = response.text().await?;
     parse_query_response(http_status, &text)
+}
+
+/// Build the JSON body for a Query Service request.
+fn build_query_body(request: &QueryRequest) -> serde_json::Value {
+    let mut body = serde_json::json!({ "statement": request.statement });
+    if let Some(timeout) = &request.timeout {
+        body["timeout"] = serde_json::Value::String(timeout.clone());
+    }
+    if let Some(sc) = &request.scan_consistency {
+        body["scan_consistency"] = serde_json::Value::String(sc.clone());
+    }
+    if let Some(params) = &request.parameters {
+        if params.as_array().map(|a| !a.is_empty()).unwrap_or(true) {
+            body["args"] = params.clone();
+        }
+    }
+    if let Some(named) = &request.named_parameters {
+        for (k, v) in named {
+            let key = if k.starts_with('$') { k.clone() } else { format!("${}", k) };
+            body[key] = v.clone();
+        }
+    }
+    if let Some(id) = &request.client_context_id {
+        body["client_context_id"] = serde_json::Value::String(id.clone());
+    }
+    body
 }
 
 /// Format the `errors` array of a Query Service response as `[code] msg; …`.
@@ -392,8 +514,7 @@ async fn get_explain_plan(
         QueryRequest {
             statement: explain_stmt,
             timeout: Some("30s".to_string()),
-            scan_consistency: None,
-            parameters: None,
+            ..Default::default()
         },
     )
     .await?;
@@ -407,6 +528,7 @@ async fn get_explain_plan(
 
 #[tauri::command]
 async fn list_buckets(config: ConnectionConfig) -> Result<Vec<BucketInfo>, AppError> {
+    let config = resolve_config(config)?;
     let client = build_client(&config)?;
     let url = mgmt_url(&config, "/pools/default/buckets");
 
@@ -447,6 +569,7 @@ async fn get_keyspace_metadata(
         }]
     };
 
+    let config = resolve_config(config)?;
     let client = build_client(&config)?;
     let mut url = reqwest::Url::parse(&mgmt_url(&config, "/"))
         .map_err(|e| AppError::Connection(e.to_string()))?;
@@ -491,12 +614,73 @@ async fn infer_schema(
         QueryRequest {
             statement: stmt,
             timeout: Some("30s".to_string()),
-            scan_consistency: None,
-            parameters: None,
+            ..Default::default()
         },
     )
     .await?;
     Ok(parse_infer_fields(&result.results))
+}
+
+/// Make a file name safe for the save dialog (no path separators / control chars).
+fn sanitize_file_name(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| if c.is_control() || "/\\:*?\"<>|".contains(c) { '_' } else { c })
+        .collect();
+    let trimmed = cleaned.trim().trim_matches('.').to_string();
+    if trimmed.is_empty() { "export".to_string() } else { trimmed }
+}
+
+/// Ask the user where to save `contents` and write it. Returns the chosen
+/// path, or `None` if the dialog was cancelled.
+#[tauri::command]
+async fn export_file(
+    app: tauri::AppHandle,
+    default_name: String,
+    contents: String,
+    filter_name: String,
+    extensions: Vec<String>,
+) -> Result<Option<String>, AppError> {
+    use tauri_plugin_dialog::DialogExt;
+    let name = sanitize_file_name(&default_name);
+    let path = tokio::task::spawn_blocking(move || {
+        let exts: Vec<&str> = extensions.iter().map(String::as_str).collect();
+        app.dialog()
+            .file()
+            .set_file_name(&name)
+            .add_filter(&filter_name, &exts)
+            .blocking_save_file()
+    })
+    .await
+    .map_err(|e| AppError::Connection(e.to_string()))?;
+
+    let Some(path) = path else { return Ok(None) };
+    let path = path
+        .into_path()
+        .map_err(|e| AppError::Connection(format!("Invalid path: {}", e)))?;
+    tokio::fs::write(&path, contents)
+        .await
+        .map_err(|e| AppError::Connection(format!("Could not write {}: {}", path.display(), e)))?;
+    Ok(Some(path.display().to_string()))
+}
+
+/// Cancel a running request started with the given `client_context_id`.
+#[tauri::command]
+async fn cancel_query(
+    config: ConnectionConfig,
+    client_context_id: String,
+) -> Result<bool, AppError> {
+    let result = execute_query(
+        config,
+        QueryRequest {
+            statement: "DELETE FROM system:active_requests WHERE clientContextID = $1".to_string(),
+            timeout: Some("10s".to_string()),
+            parameters: Some(serde_json::json!([client_context_id])),
+            ..Default::default()
+        },
+    )
+    .await?;
+    Ok(result.metrics.mutation_count > 0)
 }
 
 #[tauri::command]
@@ -504,8 +688,7 @@ async fn test_connection(config: ConnectionConfig) -> Result<bool, AppError> {
     let request = QueryRequest {
         statement: "SELECT 1 AS connected".to_string(),
         timeout: Some("5s".to_string()),
-        scan_consistency: None,
-        parameters: None,
+        ..Default::default()
     };
     execute_query(config, request).await?;
     Ok(true)
@@ -515,6 +698,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             execute_query,
             get_explain_plan,
@@ -522,6 +706,10 @@ pub fn run() {
             get_keyspace_metadata,
             infer_schema,
             test_connection,
+            cancel_query,
+            set_connection_secret,
+            delete_connection_secret,
+            export_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -538,6 +726,10 @@ mod tests {
             username: "Administrator".to_string(),
             password: "password".to_string(),
             tls: false,
+            verify_tls: true,
+            mgmt_port: None,
+            id: None,
+            keychain: false,
         }
     }
 
@@ -548,6 +740,10 @@ mod tests {
             username: "dev".to_string(),
             password: "s3cr3t".to_string(),
             tls: true,
+            verify_tls: true,
+            mgmt_port: None,
+            id: None,
+            keychain: false,
         }
     }
 
@@ -797,5 +993,123 @@ mod tests {
         assert!(matches!(mgmt_error(401, ""), AppError::Connection(_)));
         assert!(matches!(mgmt_error(403, ""), AppError::Connection(_)));
         assert!(matches!(mgmt_error(500, "boom"), AppError::Http(_)));
+    }
+
+    // --- build_query_body ---
+
+    #[test]
+    fn query_body_contains_all_options() {
+        let mut named = serde_json::Map::new();
+        named.insert("city".to_string(), serde_json::json!("Paris"));
+        named.insert("$limit".to_string(), serde_json::json!(5));
+        let body = build_query_body(&QueryRequest {
+            statement: "SELECT 1".to_string(),
+            timeout: Some("60s".to_string()),
+            scan_consistency: Some("request_plus".to_string()),
+            parameters: Some(serde_json::json!([1, "a"])),
+            named_parameters: Some(named),
+            client_context_id: Some("ctx-1".to_string()),
+        });
+        assert_eq!(body["statement"], "SELECT 1");
+        assert_eq!(body["timeout"], "60s");
+        assert_eq!(body["scan_consistency"], "request_plus");
+        assert_eq!(body["args"], serde_json::json!([1, "a"]));
+        assert_eq!(body["$city"], "Paris");
+        assert_eq!(body["$limit"], 5);
+        assert_eq!(body["client_context_id"], "ctx-1");
+    }
+
+    #[test]
+    fn query_body_omits_empty_args() {
+        let body = build_query_body(&QueryRequest {
+            statement: "SELECT 1".to_string(),
+            parameters: Some(serde_json::json!([])),
+            ..Default::default()
+        });
+        assert!(body.get("args").is_none());
+        assert!(body.get("client_context_id").is_none());
+    }
+
+    #[test]
+    fn query_request_deserializes_without_optional_fields() {
+        let r: QueryRequest = serde_json::from_str(r#"{"statement":"SELECT 1"}"#).unwrap();
+        assert!(r.named_parameters.is_none());
+    }
+
+    // --- resolve_config ---
+
+    #[test]
+    fn resolve_config_keeps_inline_password_without_touching_keychain() {
+        let mut cfg = test_config();
+        cfg.id = Some("x".to_string());
+        cfg.keychain = true; // password already present → no lookup
+        assert_eq!(resolve_config(cfg).unwrap().password, "password");
+    }
+
+    #[test]
+    fn connection_config_accepts_frontend_shape() {
+        let cfg: ConnectionConfig = serde_json::from_str(
+            r#"{"id":"a","name":"Prod","host":"h","port":8093,"username":"u","password":"","tls":false,"keychain":true}"#,
+        )
+        .unwrap();
+        assert!(cfg.keychain);
+        assert_eq!(cfg.id.as_deref(), Some("a"));
+    }
+
+    /// Needs a running Secret Service / Keychain; run with `cargo test -- --ignored`.
+    #[tokio::test]
+    #[ignore]
+    async fn keychain_roundtrip() {
+        let id = format!("test-{}", uuid::Uuid::new_v4());
+        set_connection_secret(id.clone(), "s3cr3t".to_string()).await.unwrap();
+        let mut cfg = test_config();
+        cfg.password = String::new();
+        cfg.id = Some(id.clone());
+        cfg.keychain = true;
+        assert_eq!(resolve_config(cfg.clone()).unwrap().password, "s3cr3t");
+        delete_connection_secret(id.clone()).await.unwrap();
+        delete_connection_secret(id).await.unwrap(); // idempotent
+        assert!(resolve_config(cfg).is_err());
+    }
+
+    // --- TLS / mgmt port options ---
+
+    #[test]
+    fn verify_tls_defaults_to_true_when_missing() {
+        let cfg: ConnectionConfig = serde_json::from_str(
+            r#"{"host":"h","port":18093,"username":"u","password":"p","tls":true}"#,
+        )
+        .unwrap();
+        assert!(cfg.verify_tls);
+        assert!(cfg.mgmt_port.is_none());
+    }
+
+    #[test]
+    fn mgmt_url_uses_custom_port() {
+        let mut cfg = tls_config();
+        cfg.mgmt_port = Some(9000);
+        assert_eq!(mgmt_url(&cfg, "/x"), "https://cb.example.com:9000/x");
+    }
+
+    #[tokio::test]
+    async fn connection_refused_error_has_hint() {
+        // Port 1 on localhost is not listening.
+        let mut cfg = test_config();
+        cfg.port = 1;
+        let err = execute_query(
+            cfg,
+            QueryRequest { statement: "SELECT 1".into(), ..Default::default() },
+        )
+        .await
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("check host, port and TLS settings"), "{}", msg);
+    }
+
+    #[test]
+    fn sanitize_file_name_strips_separators() {
+        assert_eq!(sanitize_file_name("../a/b:c.csv"), "_a_b_c.csv");
+        assert_eq!(sanitize_file_name("  "), "export");
+        assert_eq!(sanitize_file_name("results.json"), "results.json");
     }
 }

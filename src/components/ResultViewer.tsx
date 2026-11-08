@@ -11,7 +11,9 @@ import {
   toCsv,
   toTsv,
   truncate,
+  RAW_VALUE_COLUMN,
 } from "../lib/result-utils";
+import { saveTextFile, timestampedName } from "../lib/export";
 import "react-json-view-lite/dist/index.css";
 import "./ResultViewer.css";
 
@@ -25,20 +27,6 @@ interface Props {
 
 const PAGE_SIZE = 100;
 const EMPTY_ROWS: Row[] = [];
-
-// ---------- Export helpers ----------
-
-function triggerDownload(content: string, type: string, filename: string): void {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
 
 async function copyText(text: string): Promise<boolean> {
   try {
@@ -56,6 +44,8 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
   const [sortDir, setSortDir] = useState<SortDirection>("asc");
   const [filterText, setFilterText] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [selectedRow, setSelectedRow] = useState<Row | null>(null);
 
   // All hooks must run on every render — keep them above the early returns.
   const allRows = useMemo(() => (result ? toRows(result.results) : EMPTY_ROWS), [result]);
@@ -72,6 +62,7 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
     setFilterText("");
     setSortColumn(null);
     setSortDir("asc");
+    setSelectedRow(null);
   }, [result]);
 
   if (isLoading) {
@@ -117,6 +108,36 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
   };
 
   const rawResults = result.results;
+
+  const flash = (msg: string) => {
+    setNotice(msg);
+    setTimeout(() => setNotice(null), 4000);
+  };
+
+  const handleExport = async (kind: "json" | "csv") => {
+    try {
+      const path = await saveTextFile(
+        kind === "json"
+          ? {
+              fileName: timestampedName("results", "json"),
+              contents: JSON.stringify(rawResults, null, 2),
+              mime: "application/json",
+              filterName: "JSON",
+              extensions: ["json"],
+            }
+          : {
+              fileName: timestampedName("results", "csv"),
+              contents: toCsv(processedRows, columns),
+              mime: "text/csv",
+              filterName: "CSV",
+              extensions: ["csv"],
+            }
+      );
+      if (path) flash(`Saved ${path}`);
+    } catch (e) {
+      flash(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
   const handleCopy = async (kind: "json" | "tsv") => {
     const text =
       kind === "json" ? JSON.stringify(rawResults, null, 2) : toTsv(processedRows, columns);
@@ -163,16 +184,17 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
 
   const renderExportMenu = () => (
     <div className="rv-export">
+      {notice && <span className="rv-notice" title={notice}>{notice}</span>}
       <button
         className="btn btn-ghost rv-export-btn"
-        onClick={() => triggerDownload(JSON.stringify(rawResults, null, 2), "application/json", "results.json")}
+        onClick={() => handleExport("json")}
         data-tooltip="Download as JSON"
       >
         ↓ JSON
       </button>
       <button
         className="btn btn-ghost rv-export-btn"
-        onClick={() => triggerDownload(toCsv(processedRows, columns), "text/csv", "results.csv")}
+        onClick={() => handleExport("csv")}
         data-tooltip="Download as CSV"
         disabled={columns.length === 0}
       >
@@ -236,7 +258,12 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
           </thead>
           <tbody>
             {pageRows.map((row, i) => (
-              <tr key={i} className="rv-tr">
+              <tr
+                key={i}
+                className={`rv-tr${row === selectedRow ? " rv-tr-selected" : ""}`}
+                onClick={() => setSelectedRow(row === selectedRow ? null : row)}
+                title="Click to show the full row"
+              >
                 <td className="rv-td rv-td-row">{page * PAGE_SIZE + i + 1}</td>
                 {columns.map((col) => (
                   <td key={col} className="rv-td">
@@ -325,9 +352,14 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
         </div>
       </div>
       <div className="rv-body">
-        {viewMode === "table" && renderTable()}
-        {viewMode === "json" && renderJson()}
-        {viewMode === "tree" && renderTree()}
+        <div className="rv-main">
+          {viewMode === "table" && renderTable()}
+          {viewMode === "json" && renderJson()}
+          {viewMode === "tree" && renderTree()}
+        </div>
+        {viewMode === "table" && selectedRow && (
+          <RowDetail row={selectedRow} onClose={() => setSelectedRow(null)} />
+        )}
       </div>
     </div>
   );
@@ -348,4 +380,40 @@ function CellValue({ value }: { value: unknown }) {
       </span>
     );
   return <span>{String(value)}</span>;
+}
+
+function RowDetail({ row, onClose }: { row: Row; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const value = Object.keys(row).length === 1 && RAW_VALUE_COLUMN in row ? row[RAW_VALUE_COLUMN] : row;
+  const text = JSON.stringify(value, null, 2);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <aside className="rv-detail" aria-label="Row detail">
+      <div className="rv-detail-head">
+        <span>Row</span>
+        <span style={{ flex: 1 }} />
+        <button
+          className="btn btn-ghost"
+          onClick={async () => {
+            if (await copyText(text)) {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            }
+          }}
+        >
+          {copied ? "✓ Copied" : "⧉ Copy"}
+        </button>
+        <button className="btn btn-ghost" onClick={onClose} aria-label="Close row detail">
+          ✕
+        </button>
+      </div>
+      <pre className="rv-detail-body">{text}</pre>
+    </aside>
+  );
 }

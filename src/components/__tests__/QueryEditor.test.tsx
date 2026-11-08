@@ -5,6 +5,7 @@ import { useEffect } from "react";
 // ---- Fake Monaco -----------------------------------------------------------
 const commands: Record<number, () => void> = {};
 let selectionText = "";
+let cursorOffset: number | null = null;
 
 const fakeEditor = {
   addCommand: (key: number, fn: () => void) => {
@@ -15,8 +16,10 @@ const fakeEditor = {
     getValueInRange: () => selectionText,
     getValue: () => "",
     setValue: () => {},
+    getOffsetAt: () => cursorOffset ?? 0,
+    getPositionAt: () => ({ lineNumber: 1, column: 1 }),
   }),
-  getPosition: () => null,
+  getPosition: () => (cursorOffset === null ? null : { lineNumber: 1, column: cursorOffset + 1 }),
   setPosition: () => {},
   updateOptions: () => {},
   focus: () => {},
@@ -24,11 +27,11 @@ const fakeEditor = {
 
 const fakeMonaco = {
   KeyMod: { CtrlCmd: 1 << 11, Shift: 1 << 10 },
-  KeyCode: { Enter: 3, KeyE: 35, KeyS: 49, KeyF: 36 },
+  KeyCode: { Enter: 3, KeyE: 35, KeyS: 49, KeyF: 36, KeyA: 31 },
   languages: {
     getLanguages: () => [{ id: "n1ql" }],
     registerCompletionItemProvider: () => ({ dispose: () => {} }),
-    CompletionItemKind: { Field: 3 },
+    CompletionItemKind: { Field: 3, Module: 8 },
   },
 };
 
@@ -51,6 +54,7 @@ import QueryEditor from "../QueryEditor";
 afterEach(() => {
   cleanup();
   selectionText = "";
+  cursorOffset = null;
 });
 
 const RUN_KEY = fakeMonaco.KeyMod.CtrlCmd | fakeMonaco.KeyCode.Enter;
@@ -80,6 +84,13 @@ describe("QueryEditor", () => {
     selectionText = "SELECT 2";
     fireEvent.click(screen.getByText("▶ Run"));
     expect(props.onRun).toHaveBeenCalledWith("SELECT 2");
+  });
+
+  it("runs only the statement under the cursor when there are several", () => {
+    const { props } = renderEditor();
+    cursorOffset = "SELECT 1; SELECT".length;
+    fireEvent.click(screen.getByText("▶ Run"));
+    expect(props.onRun).toHaveBeenCalledWith(" SELECT 2");
   });
 
   it("Ctrl+Enter uses the latest onRun callback and value, not the ones from mount", () => {

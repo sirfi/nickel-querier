@@ -3,6 +3,8 @@ import MonacoEditor, { OnMount, BeforeMount } from "@monaco-editor/react";
 import { registerN1QLLanguage } from "../lib/n1ql-language";
 import { SchemaField } from "../lib/types";
 import { formatN1QL } from "../lib/n1ql-formatter";
+import { splitStatements, statementAtOffset } from "../lib/statements";
+import { buildSchemaSuggestions, extendForBacktick } from "../lib/completions";
 import {
   loadEditorFontSize,
   saveEditorFontSize,
@@ -10,6 +12,8 @@ import {
   EDITOR_FONT_SIZE_MAX,
 } from "../lib/storage";
 import type * as MonacoType from "monaco-editor";
+import type { ReactNode } from "react";
+import type { ScanConsistency } from "../lib/types";
 import "./QueryEditor.css";
 
 interface Props {
@@ -19,10 +23,21 @@ interface Props {
   onRun: (statement: string) => void;
   /** Called with the selected text, or the whole editor content. */
   onExplain: (statement: string) => void;
+  /** Index Advisor for the active statement */
+  onAdvise?: (statement: string) => void;
   onSave: () => void;
+  /** Present while a cancellable query is running. */
+  onCancel?: () => void;
+  isCancelling?: boolean;
   isRunning: boolean;
   schemaFields: SchemaField[];
+  /** Quoted keyspace paths for completion */
+  keyspaces?: string[];
   monacoTheme?: string;
+  scanConsistency?: ScanConsistency;
+  onScanConsistencyChange?: (value: ScanConsistency) => void;
+  /** Rendered between the toolbar and the editor (e.g. the parameters panel). */
+  belowToolbar?: ReactNode;
 }
 
 export default function QueryEditor({
@@ -30,14 +45,23 @@ export default function QueryEditor({
   onChange,
   onRun,
   onExplain,
+  onAdvise,
   onSave,
+  onCancel,
+  isCancelling = false,
   isRunning,
   schemaFields,
+  keyspaces = [],
   monacoTheme = "nickel-dark",
+  scanConsistency = "not_bounded",
+  onScanConsistencyChange,
+  belowToolbar,
 }: Props) {
   const editorRef = useRef<MonacoType.editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<typeof MonacoType | null>(null);
   const [fontSize, setFontSize] = useState<number>(() => loadEditorFontSize());
+  // Monaco loads asynchronously; effects that need it re-run once it is ready.
+  const [monacoReady, setMonacoReady] = useState(false);
 
   const handleBeforeMount: BeforeMount = (monaco) => {
     monacoRef.current = monaco;
@@ -65,10 +89,31 @@ export default function QueryEditor({
   // Latest value / callbacks, read by Monaco commands registered once at mount.
   const valueRef = useRef(value);
   valueRef.current = value;
-  const callbacksRef = useRef({ onRun, onExplain, onSave, handleFormat, isRunning });
-  callbacksRef.current = { onRun, onExplain, onSave, handleFormat, isRunning };
+  const callbacksRef = useRef({ onRun, onExplain, onAdvise, onSave, handleFormat, isRunning });
+  callbacksRef.current = { onRun, onExplain, onAdvise, onSave, handleFormat, isRunning };
 
-  /** Selected text if there is a non-empty selection, otherwise the whole editor value. */
+  /** Briefly highlight the range that is about to run. */
+  const flashRange = (start: number, end: number) => {
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    const model = editor?.getModel();
+    if (!editor || !monaco || !model || !editor.createDecorationsCollection) return;
+    const a = model.getPositionAt(start);
+    const b = model.getPositionAt(end);
+    const deco = editor.createDecorationsCollection([
+      {
+        range: new monaco.Range(a.lineNumber, a.column, b.lineNumber, b.column),
+        options: { className: "qe-running-statement", isWholeLine: false },
+      },
+    ]);
+    setTimeout(() => deco.clear(), 600);
+  };
+
+  /**
+   * What to execute: the selection if there is one; otherwise, when the
+   * editor holds several statements, the one under the cursor; otherwise
+   * the whole editor value.
+   */
   const getActiveStatement = useCallback((): string => {
     const editor = editorRef.current;
     const selection = editor?.getSelection();
@@ -76,7 +121,18 @@ export default function QueryEditor({
       const selected = editor.getModel()?.getValueInRange(selection);
       if (selected && selected.trim()) return selected;
     }
-    return valueRef.current;
+    const value = valueRef.current;
+    const model = editor?.getModel();
+    const position = editor?.getPosition();
+    if (model?.getOffsetAt && position && splitStatements(value).length > 1) {
+      const stmt = statementAtOffset(value, model.getOffsetAt(position));
+      if (stmt) {
+        flashRange(stmt.start, stmt.end);
+        return stmt.text;
+      }
+    }
+    return value;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const run = useCallback(() => {
@@ -87,6 +143,11 @@ export default function QueryEditor({
   const explain = useCallback(() => {
     if (callbacksRef.current.isRunning) return;
     callbacksRef.current.onExplain(getActiveStatement());
+  }, [getActiveStatement]);
+
+  const advise = useCallback(() => {
+    if (callbacksRef.current.isRunning) return;
+    callbacksRef.current.onAdvise?.(getActiveStatement());
   }, [getActiveStatement]);
 
   const handleMount: OnMount = (editor, monaco) => {
@@ -100,6 +161,11 @@ export default function QueryEditor({
       monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyE,
       explain
     );
+    // Ctrl/Cmd + Shift + A for the Index Advisor
+    editor.addCommand(
+      monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyA,
+      advise
+    );
     // Ctrl/Cmd + S to save
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () =>
       callbacksRef.current.onSave()
@@ -110,42 +176,51 @@ export default function QueryEditor({
       () => callbacksRef.current.handleFormat()
     );
     editor.focus();
+    setMonacoReady(true);
   };
 
-  // Update schema-based completions when fields change
+  // Schema-based completions (fields of the inferred collection + keyspaces)
   useEffect(() => {
     const monaco = monacoRef.current;
-    if (!monaco || schemaFields.length === 0) return;
+    if (!monacoReady || !monaco) return;
+    const items = buildSchemaSuggestions(schemaFields, keyspaces);
+    if (items.length === 0) return;
 
     const disposable = monaco.languages.registerCompletionItemProvider("n1ql", {
+      triggerCharacters: ["`"],
       provideCompletionItems(
         model: MonacoType.editor.ITextModel,
         position: MonacoType.Position
       ): MonacoType.languages.ProviderResult<MonacoType.languages.CompletionList> {
         const word = model.getWordUntilPosition(position);
-        const range = new monaco.Range(
-          position.lineNumber,
-          word.startColumn,
-          position.lineNumber,
-          word.endColumn
+        const fieldRange = new monaco.Range(
+          position.lineNumber, word.startColumn, position.lineNumber, word.endColumn
         );
-        const fieldItems: MonacoType.languages.CompletionItem[] = schemaFields.map(
-          (f) => ({
-            label: f.name,
-            kind: monaco.languages.CompletionItemKind.Field,
-            insertText: f.name,
-            detail: f.field_type,
-            sortText: "2" + f.name,
-            documentation: `Field: ${f.name} (${f.field_type})`,
-            range,
-          })
+        const ks = extendForBacktick(
+          model.getLineContent(position.lineNumber), word.startColumn, word.endColumn
         );
-        return { suggestions: fieldItems };
+        const ksRange = new monaco.Range(
+          position.lineNumber, ks.startColumn, position.lineNumber, ks.endColumn
+        );
+        return {
+          suggestions: items.map((s) => ({
+            label: s.label,
+            kind:
+              s.kind === "field"
+                ? monaco.languages.CompletionItemKind.Field
+                : monaco.languages.CompletionItemKind.Module,
+            insertText: s.insertText,
+            filterText: s.filterText,
+            detail: s.detail,
+            sortText: s.sortText,
+            range: s.kind === "field" ? fieldRange : ksRange,
+          })),
+        };
       },
     });
 
     return () => disposable.dispose();
-  }, [schemaFields]);
+  }, [schemaFields, keyspaces, monacoReady]);
 
   // Sync font size changes to editor instance
   useEffect(() => {
@@ -163,6 +238,22 @@ export default function QueryEditor({
   return (
     <div className="query-editor-wrapper">
       <div className="qe-toolbar">
+        {onCancel ? (
+          <button
+            className="btn btn-danger"
+            onClick={onCancel}
+            disabled={isCancelling}
+            data-tooltip="Stop the running query"
+          >
+            {isCancelling ? (
+              <>
+                <span className="spinner" /> Stopping…
+              </>
+            ) : (
+              <>■ Stop</>
+            )}
+          </button>
+        ) : (
         <button
           className="btn btn-primary"
           onClick={run}
@@ -177,6 +268,7 @@ export default function QueryEditor({
             <>▶ Run</>
           )}
         </button>
+        )}
         <button
           className="btn"
           onClick={explain}
@@ -185,6 +277,16 @@ export default function QueryEditor({
         >
           ⚡ Explain
         </button>
+        {onAdvise && (
+          <button
+            className="btn"
+            onClick={advise}
+            disabled={isRunning}
+            data-tooltip="Index Advisor (Ctrl+Shift+A)"
+          >
+            💡 Advise
+          </button>
+        )}
         <button
           className="btn"
           onClick={onSave}
@@ -218,10 +320,23 @@ export default function QueryEditor({
             A+
           </button>
         </div>
+        {onScanConsistencyChange && (
+          <select
+            className="qe-select"
+            value={scanConsistency}
+            onChange={(e) => onScanConsistencyChange(e.target.value as ScanConsistency)}
+            data-tooltip="Scan consistency: request_plus waits for indexes to include all prior mutations"
+            aria-label="Scan consistency"
+          >
+            <option value="not_bounded">not_bounded</option>
+            <option value="request_plus">request_plus</option>
+          </select>
+        )}
         <span className="qe-hint">
-          Tip: Select text then Run to execute a sub-query
+          Runs the selection, or the statement under the cursor
         </span>
       </div>
+      {belowToolbar}
       <div className="qe-monaco">
         <MonacoEditor
           height="100%"

@@ -1,6 +1,6 @@
 # ⬡ Nickel Querier — SQL+++ for Couchbase
 
-![Version](https://img.shields.io/badge/version-0.3.0-blue)
+![Version](https://img.shields.io/badge/version-0.4.0-blue)
 
 A stable, workflow-oriented, cross-platform query tool for **Couchbase N1QL / SQL++**.
 
@@ -29,6 +29,22 @@ Built with **Tauri** (Rust backend) + **Monaco Editor** + **Couchbase Query Serv
 - **Editor Font Size Control** — Increase / decrease Monaco editor font size from the toolbar
 - **Query Formatting** — Auto-format SQL++ with a single shortcut (`Ctrl/⌘ + Shift + F`)
 - **Result Column Sorting & Filtering** — Click column headers to sort; type to filter rows in Table view
+
+### Productivity (v0.4)
+- **Run the Statement Under the Cursor** — With several `;`-separated statements, `Ctrl/⌘ + Enter` runs only the one under the cursor (or the selection)
+- **Stop Running Queries** — ■ Stop cancels the request on the server (`system:active_requests`)
+- **Parameters Panel** — Inputs for `$1` / `$name` parameters found in the statement; scan consistency picker per tab
+- **Index Advisor** — 💡 Advise (`Ctrl/⌘ + Shift + A`) runs `ADVISE` and shows recommended / covering indexes; the schema panel lists each collection's indexes
+- **Document Editor** — Load a document by key, edit the JSON, save (UPSERT) or delete
+- **Row Detail Panel** — Click a result row to see it as formatted JSON
+- **Persistent Workspace** — Open tabs, queries, parameter values and panel sizes survive restarts; panels are resizable
+- **Keyspace Completions** — Bucket and collection names in autocomplete; nested fields from `INFER`
+- **Saved Query Import / Export** — Share saved queries as a JSON file; history remembers the connection used
+- **Keyboard Shortcut List** — `Ctrl/⌘ + ?`
+
+### Security
+- **Passwords in the OS Keychain** — macOS Keychain, Windows Credential Manager or Linux Secret Service; older plain-text passwords are migrated automatically
+- **TLS Certificate Verification** — On by default; can be turned off per connection for self-signed clusters
 
 ---
 
@@ -90,9 +106,11 @@ npm run tauri build
 
 ### Connecting to Couchbase
 
-1. Click **⚙ Configure** in the top bar
-2. Enter your Couchbase cluster host, Query Service port (default `8093`), and credentials
-3. Click **Test Connection** to verify, then **Save & Apply**
+1. Click **⚙ Manage** in the top bar, then **+ Add Connection**
+2. Enter the host, Query Service port (default `8093`, `18093` with TLS) and credentials.
+   The Management port defaults to `8091` / `18091`.
+3. For TLS with a self-signed certificate, untick **Verify TLS certificate**
+4. Click **Test** to verify, then **Save** — the password is stored in your OS keychain
 
 The Schema Explorer panel will automatically load your buckets.
 

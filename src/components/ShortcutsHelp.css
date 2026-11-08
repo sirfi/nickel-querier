@@ -1,0 +1,23 @@
+.sh-modal { width: 560px; }
+.sh-body { overflow: auto; padding: 8px 20px 16px; }
+.sh-group {
+  margin: 12px 0 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.sh-list { margin: 0; }
+.sh-row { display: flex; gap: 12px; padding: 4px 0; font-size: 13px; }
+.sh-row dt { width: 190px; flex-shrink: 0; }
+.sh-row dd { margin: 0; color: var(--text-secondary); }
+.sh-row kbd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
