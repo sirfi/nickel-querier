@@ -117,3 +117,20 @@ describe("formatN1QL — regressions", () => {
     expect(out).toBe("SELECT 1;\n\nSELECT 2");
   });
 });
+
+describe("formatN1QL — review fixes", () => {
+  it("does not uppercase a field name separated from `.` by a comment", () => {
+    expect(formatN1QL("select d./* field */first from b d")).toContain("first");
+    expect(formatN1QL("select d./* field */first from b d")).not.toContain("FIRST");
+  });
+
+  it("keeps trailing spaces inside quoted identifiers and comments", () => {
+    const out = formatN1QL("select 1 as `a `\nfrom b /* x   \n y */");
+    expect(out).toContain("`a `");
+    expect(out).toContain("/* x   \n y */");
+  });
+
+  it("keeps trailing spaces at the end of a line comment", () => {
+    expect(formatN1QL("select 1 -- note   ")).toContain("-- note   ");
+  });
+});

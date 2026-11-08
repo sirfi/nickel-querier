@@ -32,9 +32,11 @@ export default function SchemaExplorer({ config, onFieldsChange, onOpenQuery, on
   const [editing, setEditing] = useState<KeyspaceRef | null>(null);
 
   // Identity of the connection: any change invalidates the cached tree.
-  const connKey = `${config.tls}|${config.host}|${config.port}|${config.username}|${config.password}`;
-  const connKeyRef = useRef(connKey);
-  connKeyRef.current = connKey;
+  // (id matters: keychain connections have an empty password field)
+  const connKey = [
+    config.id, config.tls, config.verify_tls, config.host, config.port,
+    config.mgmt_port, config.username, config.password,
+  ].join("|");
 
   const setBusyFlag = (id: string, on: boolean) =>
     setBusy((prev) => {
@@ -44,9 +46,16 @@ export default function SchemaExplorer({ config, onFieldsChange, onOpenQuery, on
       return next;
     });
 
+  // Every refresh (and so every connection change) starts a new generation;
+  // responses from an older generation are dropped so that metadata of one
+  // cluster never ends up in the tree / autocomplete of another.
+  const generationRef = useRef(0);
+  const isCurrent = (gen: number) => generationRef.current === gen;
+
   const refresh = useCallback(async () => {
-    const key = connKeyRef.current;
+    const gen = ++generationRef.current;
     setLoading(true);
+    setBusy(new Set());
     setError(null);
     setSchemas({});
     setFields({});
@@ -55,14 +64,14 @@ export default function SchemaExplorer({ config, onFieldsChange, onOpenQuery, on
     setExpanded(new Set());
     try {
       const bs = await listBuckets(config);
-      if (connKeyRef.current !== key) return; // connection changed meanwhile
+      if (!isCurrent(gen)) return; // connection changed / refreshed meanwhile
       setBuckets([...bs].sort((a, b) => a.name.localeCompare(b.name)));
     } catch (e: unknown) {
-      if (connKeyRef.current !== key) return;
+      if (!isCurrent(gen)) return;
       setBuckets([]);
       setError(errMsg(e));
     } finally {
-      if (connKeyRef.current === key) setLoading(false);
+      if (isCurrent(gen)) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connKey]);
@@ -92,15 +101,17 @@ export default function SchemaExplorer({ config, onFieldsChange, onOpenQuery, on
     const id = `b:${name}`;
     toggle(id);
     if (expanded.has(id) || schemas[name]) return;
+    const gen = generationRef.current;
     setBusyFlag(id, true);
     try {
       const ks = await getKeyspaceMetadata(config, name);
+      if (!isCurrent(gen)) return;
       setSchemas((prev) => ({ ...prev, [name]: ks }));
       setItemErrors(({ [id]: _, ...rest }) => rest);
     } catch (e) {
-      setItemErrors((prev) => ({ ...prev, [id]: errMsg(e) }));
+      if (isCurrent(gen)) setItemErrors((prev) => ({ ...prev, [id]: errMsg(e) }));
     } finally {
-      setBusyFlag(id, false);
+      if (isCurrent(gen)) setBusyFlag(id, false);
     }
   };
 
@@ -113,20 +124,26 @@ export default function SchemaExplorer({ config, onFieldsChange, onOpenQuery, on
       return;
     }
     if (force) setExpanded((prev) => new Set(prev).add(`c:${id}`));
+    const gen = generationRef.current;
     setBusyFlag(id, true);
     // Index list loads in parallel; its failure must not hide the fields.
     executeQuery(config, indexListQuery(ks))
-      .then((r) => setIndexes((prev) => ({ ...prev, [id]: r.results as IndexInfo[] })))
-      .catch((e) => setIndexes((prev) => ({ ...prev, [id]: errMsg(e) })));
+      .then((r) => {
+        if (isCurrent(gen)) setIndexes((prev) => ({ ...prev, [id]: r.results as IndexInfo[] }));
+      })
+      .catch((e) => {
+        if (isCurrent(gen)) setIndexes((prev) => ({ ...prev, [id]: errMsg(e) }));
+      });
     try {
       const fs = await inferSchema(config, ks);
+      if (!isCurrent(gen)) return;
       setFields((prev) => ({ ...prev, [id]: fs }));
       setItemErrors(({ [id]: _, ...rest }) => rest);
       onFieldsChange(fs);
     } catch (e) {
-      setItemErrors((prev) => ({ ...prev, [id]: errMsg(e) }));
+      if (isCurrent(gen)) setItemErrors((prev) => ({ ...prev, [id]: errMsg(e) }));
     } finally {
-      setBusyFlag(id, false);
+      if (isCurrent(gen)) setBusyFlag(id, false);
     }
   };
 
@@ -135,7 +152,9 @@ export default function SchemaExplorer({ config, onFieldsChange, onOpenQuery, on
     ? buckets.filter(
         (b) =>
           b.name.toLowerCase().includes(needle) ||
-          (schemas[b.name] ?? []).some((c) =>
+          // Collections not loaded yet: keep the bucket so it can be opened and searched
+          !schemas[b.name] ||
+          schemas[b.name].some((c) =>
             `${c.scope}.${c.collection}`.toLowerCase().includes(needle)
           )
       )

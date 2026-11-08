@@ -183,7 +183,7 @@ export function formatN1QL(input: string): string {
   if (!input.trim()) return input;
 
   // Drop whitespace; we re-create it. Comments are preserved.
-  const tokens = tokenize(input.trim());
+  const tokens = tokenize(input);
   const sig: Token[] = [];
   const newlineBefore: boolean[] = []; // original newline before a comment
   let sawNewline = false;
@@ -200,12 +200,25 @@ export function formatN1QL(input: string): string {
   const isWord = (idx: number, w: string) =>
     sig[idx]?.type === "word" && sig[idx].text.toUpperCase() === w;
 
+  /** Nearest token before / after `idx`, skipping comments. */
+  const neighbour = (idx: number, step: -1 | 1): Token | undefined => {
+    let i = idx + step;
+    while (sig[i]?.type === "comment") i += step;
+    return sig[i];
+  };
+
   const isPropertyAccess = (idx: number) => {
-    const prev = sig[idx - 1];
-    const next = sig[idx + 1];
+    const prev = neighbour(idx, -1);
+    const next = neighbour(idx, 1);
     return (prev?.type === "punct" && prev.text === ".") ||
       (next?.type === "punct" && next.text === ":");
   };
+
+  // Whitespace we generate is always " " or "\n" + indentation; tokens never
+  // are (whitespace tokens are dropped), so these can be trimmed safely
+  // without touching literals, quoted identifiers or comments.
+  const isGeneratedSpace = (piece: string | undefined) => piece === " ";
+  const isGeneratedBreak = (piece: string | undefined) => piece !== undefined && /^\n *$/.test(piece);
 
   const out: string[] = [];
   let depth = 0;
@@ -213,8 +226,9 @@ export function formatN1QL(input: string): string {
 
   const indent = () => "  ".repeat(Math.max(0, depth));
   const newline = () => {
-    // trim trailing spaces
-    while (out.length && out[out.length - 1] === " ") out.pop();
+    while (isGeneratedSpace(out[out.length - 1])) out.pop();
+    // A previous break followed by nothing: drop its indentation (blank line)
+    if (isGeneratedBreak(out[out.length - 1])) out[out.length - 1] = "\n";
     if (out.length) out.push("\n" + indent());
     lineStart = true;
   };
@@ -315,5 +329,6 @@ export function formatN1QL(input: string): string {
     lineStart = false;
   }
 
-  return out.join("").replace(/[ \t]+\n/g, "\n").trimEnd();
+  while (out.length && /^\s+$/.test(out[out.length - 1])) out.pop();
+  return out.join("");
 }

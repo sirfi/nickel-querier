@@ -4,7 +4,12 @@ import { registerN1QLLanguage } from "../lib/n1ql-language";
 import { SchemaField } from "../lib/types";
 import { formatN1QL } from "../lib/n1ql-formatter";
 import { splitStatements, statementAtOffset } from "../lib/statements";
-import { buildSchemaSuggestions, extendForBacktick } from "../lib/completions";
+import {
+  buildSchemaSuggestions,
+  extendForBacktick,
+  fieldReplaceStart,
+  typedPathBefore,
+} from "../lib/completions";
 import {
   loadEditorFontSize,
   saveEditorFontSize,
@@ -193,12 +198,18 @@ export default function QueryEditor({
         position: MonacoType.Position
       ): MonacoType.languages.ProviderResult<MonacoType.languages.CompletionList> {
         const word = model.getWordUntilPosition(position);
-        const fieldRange = new monaco.Range(
-          position.lineNumber, word.startColumn, position.lineNumber, word.endColumn
-        );
-        const ks = extendForBacktick(
-          model.getLineContent(position.lineNumber), word.startColumn, word.endColumn
-        );
+        const line = model.getLineContent(position.lineNumber);
+        const typed = typedPathBefore(line.slice(0, position.column - 1));
+        const typedStartColumn = position.column - typed.length;
+        // Nested fields: also replace the part of the dotted path already typed
+        const fieldRange = (name: string) =>
+          new monaco.Range(
+            position.lineNumber,
+            typed ? typedStartColumn + fieldReplaceStart(typed, name) : word.startColumn,
+            position.lineNumber,
+            word.endColumn
+          );
+        const ks = extendForBacktick(line, word.startColumn, word.endColumn);
         const ksRange = new monaco.Range(
           position.lineNumber, ks.startColumn, position.lineNumber, ks.endColumn
         );
@@ -213,7 +224,7 @@ export default function QueryEditor({
             filterText: s.filterText,
             detail: s.detail,
             sortText: s.sortText,
-            range: s.kind === "field" ? fieldRange : ksRange,
+            range: s.kind === "field" ? fieldRange(s.insertText) : ksRange,
           })),
         };
       },

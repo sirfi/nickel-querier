@@ -67,3 +67,9 @@ describe("CSV / TSV", () => {
     expect(toTsv([{ a: "x\ty\nz" }], ["a"])).toBe("a\nx y z");
   });
 });
+
+describe("TSV headers", () => {
+  it("cleans tabs and newlines in column names", () => {
+    expect(toTsv([{ "a\tb": 1, "c\nd": 2 }], ["a\tb", "c\nd"])).toBe("a b\tc d\n1\t2");
+  });
+});
