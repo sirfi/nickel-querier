@@ -3,6 +3,7 @@ import MonacoEditor, { OnMount, BeforeMount } from "@monaco-editor/react";
 import { registerN1QLLanguage } from "../lib/n1ql-language";
 import { SchemaField } from "../lib/types";
 import { formatN1QL } from "../lib/n1ql-formatter";
+import { splitStatements, statementAtOffset } from "../lib/statements";
 import {
   loadEditorFontSize,
   saveEditorFontSize,
@@ -82,7 +83,28 @@ export default function QueryEditor({
   const callbacksRef = useRef({ onRun, onExplain, onSave, handleFormat, isRunning });
   callbacksRef.current = { onRun, onExplain, onSave, handleFormat, isRunning };
 
-  /** Selected text if there is a non-empty selection, otherwise the whole editor value. */
+  /** Briefly highlight the range that is about to run. */
+  const flashRange = (start: number, end: number) => {
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    const model = editor?.getModel();
+    if (!editor || !monaco || !model || !editor.createDecorationsCollection) return;
+    const a = model.getPositionAt(start);
+    const b = model.getPositionAt(end);
+    const deco = editor.createDecorationsCollection([
+      {
+        range: new monaco.Range(a.lineNumber, a.column, b.lineNumber, b.column),
+        options: { className: "qe-running-statement", isWholeLine: false },
+      },
+    ]);
+    setTimeout(() => deco.clear(), 600);
+  };
+
+  /**
+   * What to execute: the selection if there is one; otherwise, when the
+   * editor holds several statements, the one under the cursor; otherwise
+   * the whole editor value.
+   */
   const getActiveStatement = useCallback((): string => {
     const editor = editorRef.current;
     const selection = editor?.getSelection();
@@ -90,7 +112,18 @@ export default function QueryEditor({
       const selected = editor.getModel()?.getValueInRange(selection);
       if (selected && selected.trim()) return selected;
     }
-    return valueRef.current;
+    const value = valueRef.current;
+    const model = editor?.getModel();
+    const position = editor?.getPosition();
+    if (model?.getOffsetAt && position && splitStatements(value).length > 1) {
+      const stmt = statementAtOffset(value, model.getOffsetAt(position));
+      if (stmt) {
+        flashRange(stmt.start, stmt.end);
+        return stmt.text;
+      }
+    }
+    return value;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const run = useCallback(() => {
@@ -262,7 +295,7 @@ export default function QueryEditor({
           </select>
         )}
         <span className="qe-hint">
-          Tip: Select text then Run to execute a sub-query
+          Runs the selection, or the statement under the cursor
         </span>
       </div>
       {belowToolbar}

@@ -78,3 +78,5 @@
   font-size: 11px;
   padding: 4px 6px;
 }
+
+.qe-running-statement { background: rgba(88, 166, 255, 0.18); }

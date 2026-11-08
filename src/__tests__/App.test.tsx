@@ -14,6 +14,7 @@ vi.mock("@monaco-editor/react", () => ({
           addCommand: () => {},
           getSelection: () => null,
           getModel: () => null,
+          getPosition: () => null,
           updateOptions: () => {},
           focus: () => {},
         },
