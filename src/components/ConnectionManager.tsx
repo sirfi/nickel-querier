@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { SavedConnection } from "../lib/types";
-import { testConnection } from "../lib/commands";
+import { testConnection, deleteConnectionSecret } from "../lib/commands";
+import { secureConnection } from "../lib/secrets";
 import { addConnection, updateConnection, deleteConnection } from "../lib/storage";
 import "./ConnectionManager.css";
 
@@ -32,6 +33,8 @@ export default function ConnectionManager({
   const [draft, setDraft] = useState<Omit<SavedConnection, "id">>(EMPTY_FORM);
   const [testStatus, setTestStatus] = useState<TestStatus>("idle");
   const [testError, setTestError] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const openAdd = () => {
     setDraft(EMPTY_FORM);
@@ -47,8 +50,10 @@ export default function ConnectionManager({
       host: conn.host,
       port: conn.port,
       username: conn.username,
-      password: conn.password,
+      // Keychain passwords are never shown; leaving the field blank keeps them.
+      password: conn.keychain ? "" : conn.password,
       tls: conn.tls,
+      keychain: conn.keychain,
     });
     setEditingId(conn.id);
     setFormMode("edit");
@@ -66,6 +71,8 @@ export default function ConnectionManager({
         username: draft.username,
         password: draft.password,
         tls: draft.tls,
+        id: editingId ?? undefined,
+        keychain: !!draft.keychain && !draft.password,
       });
       setTestStatus("ok");
     } catch (e: unknown) {
@@ -74,31 +81,39 @@ export default function ConnectionManager({
     }
   };
 
-  const handleSave = () => {
-    if (!draft.name.trim()) return;
+  const handleSave = async () => {
+    if (!draft.name.trim() || saving) return;
+    const id = formMode === "edit" && editingId ? editingId : crypto.randomUUID();
+    const original = connections.find((c) => c.id === id);
+    const base: SavedConnection = { id, ...draft, name: draft.name.trim() };
+
+    setSaving(true);
+    let conn: SavedConnection;
+    let warning: string | undefined;
+    if (!draft.password && original?.keychain) {
+      // Blank password while editing = keep the one in the keychain
+      conn = { ...base, password: "", keychain: true };
+    } else {
+      ({ connection: conn, warning } = await secureConnection({ ...base, keychain: false }));
+    }
+    setSaving(false);
+    setNotice(warning ?? null);
 
     if (formMode === "add") {
-      const newConn: SavedConnection = {
-        id: crypto.randomUUID(),
-        ...draft,
-        name: draft.name.trim(),
-      };
-      addConnection(newConn);
-      onConnectionsChange([...connections, newConn]);
-    } else if (formMode === "edit" && editingId) {
-      const updated: SavedConnection = {
-        id: editingId,
-        ...draft,
-        name: draft.name.trim(),
-      };
-      updateConnection(updated);
-      onConnectionsChange(connections.map((c) => (c.id === editingId ? updated : c)));
+      addConnection(conn);
+      onConnectionsChange([...connections, conn]);
+    } else {
+      updateConnection(conn);
+      onConnectionsChange(connections.map((c) => (c.id === id ? conn : c)));
     }
     setFormMode(null);
     setEditingId(null);
   };
 
   const handleDelete = (id: string) => {
+    deleteConnectionSecret(id).catch(() => {
+      /* not in keychain / keychain unavailable */
+    });
     deleteConnection(id);
     onConnectionsChange(connections.filter((c) => c.id !== id));
   };
@@ -127,6 +142,8 @@ export default function ConnectionManager({
           <button className="btn btn-ghost cm-close" onClick={onClose}>✕</button>
         </div>
 
+        {notice && <div className="cm-notice">⚠ {notice}</div>}
+
         {/* Connection list */}
         <div className="cm-list">
           {connections.length === 0 && (
@@ -142,7 +159,10 @@ export default function ConnectionManager({
                 <span className="cm-item-host">
                   {conn.tls ? "https" : "http"}://{conn.host}:{conn.port}
                 </span>
-                <span className="cm-item-user">{conn.username}</span>
+                <span className="cm-item-user">
+                  {conn.username}
+                  {conn.keychain && <span title="Password stored in the OS keychain"> · 🔒</span>}
+                </span>
               </div>
               <div className="cm-item-actions">
                 <button
@@ -233,7 +253,11 @@ export default function ConnectionManager({
                   type="password"
                   value={draft.password}
                   onChange={(e) => setDraft({ ...draft, password: e.target.value })}
-                  placeholder="••••••••"
+                  placeholder={
+                    formMode === "edit" && draft.keychain
+                      ? "Stored in keychain — leave blank to keep"
+                      : "••••••••"
+                  }
                 />
               </div>
             </div>
@@ -252,9 +276,9 @@ export default function ConnectionManager({
               <button
                 className="btn btn-primary"
                 onClick={handleSave}
-                disabled={!draft.name.trim()}
+                disabled={!draft.name.trim() || saving}
               >
-                Save
+                {saving ? "Saving…" : "Save"}
               </button>
             </div>
           </div>

@@ -8,6 +8,9 @@ export interface ConnectionConfig {
   username: string;
   password: string;
   tls: boolean;
+  /** Saved connection id — lets the backend read the password from the keychain */
+  id?: string;
+  keychain?: boolean;
 }
 
 export interface QueryRequest {
@@ -93,8 +96,11 @@ export interface SavedConnection {
   host: string;
   port: number;
   username: string;
+  /** Empty when the password is stored in the OS keychain */
   password: string;
   tls: boolean;
+  /** True when the password lives in the OS keychain */
+  keychain?: boolean;
 }
 
 // ---------- Query Tabs ----------

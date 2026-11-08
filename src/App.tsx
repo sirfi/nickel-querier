@@ -10,6 +10,7 @@ import ExplainViewer from "./components/ExplainViewer";
 import ParamsPanel from "./components/ParamsPanel";
 import ResizeHandle from "./components/ResizeHandle";
 import { buildParams } from "./lib/params";
+import { migrateConnectionSecrets } from "./lib/secrets";
 
 import { executeQuery, getExplainPlan, cancelQuery } from "./lib/commands";
 import {
@@ -17,6 +18,7 @@ import {
   addHistory,
   loadSavedQueries,
   loadConnections,
+  saveConnections,
   saveLastConnectionId,
   loadLastConnectionId,
   loadTheme,
@@ -137,6 +139,19 @@ export default function App() {
   const [connections, setConnections] = useState<SavedConnection[]>(() =>
     loadConnections()
   );
+
+  // Move plain-text passwords from older versions into the OS keychain.
+  useEffect(() => {
+    let cancelled = false;
+    migrateConnectionSecrets(loadConnections()).then(({ connections: migrated, changed }) => {
+      if (cancelled || !changed) return;
+      saveConnections(migrated);
+      setConnections(migrated);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // ---------- Tabs ----------
   // Restore the previous session's tabs (or create a first tab) exactly once.

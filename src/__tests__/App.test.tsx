@@ -43,6 +43,8 @@ vi.mock("../lib/commands", () => ({
   getKeyspaceMetadata: vi.fn(async () => []),
   inferSchema: vi.fn(async () => []),
   testConnection: vi.fn(async () => true),
+  setConnectionSecret: vi.fn(async () => { throw new Error("no keychain in tests"); }),
+  deleteConnectionSecret: vi.fn(async () => {}),
 }));
 
 import App from "../App";

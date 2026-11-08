@@ -30,8 +30,15 @@ pub struct ConnectionConfig {
     pub host: String,
     pub port: u16,
     pub username: String,
+    #[serde(default)]
     pub password: String,
     pub tls: bool,
+    /// Saved-connection id; used to look the password up in the OS keychain.
+    #[serde(default)]
+    pub id: Option<String>,
+    /// True when the password lives in the OS keychain instead of `password`.
+    #[serde(default)]
+    pub keychain: bool,
 }
 
 impl Default for ConnectionConfig {
@@ -42,8 +49,57 @@ impl Default for ConnectionConfig {
             username: "Administrator".to_string(),
             password: "password".to_string(),
             tls: false,
+            id: None,
+            keychain: false,
         }
     }
+}
+
+// ---------- OS keychain ----------
+
+const KEYRING_SERVICE: &str = "com.nickel-querier.app";
+
+fn keyring_entry(id: &str) -> Result<keyring::Entry, AppError> {
+    keyring::Entry::new(KEYRING_SERVICE, &format!("connection:{}", id))
+        .map_err(|e| AppError::Connection(format!("Keychain unavailable: {}", e)))
+}
+
+/// Fill in the password from the keychain when the config says it lives there.
+fn resolve_config(mut config: ConnectionConfig) -> Result<ConnectionConfig, AppError> {
+    if config.keychain && config.password.is_empty() {
+        if let Some(id) = config.id.clone() {
+            config.password = keyring_entry(&id)?.get_password().map_err(|e| {
+                AppError::Connection(format!(
+                    "Could not read the password from the keychain ({}). Edit the connection and enter it again.",
+                    e
+                ))
+            })?;
+        }
+    }
+    Ok(config)
+}
+
+/// Store a connection password in the OS keychain.
+#[tauri::command]
+async fn set_connection_secret(id: String, password: String) -> Result<(), AppError> {
+    tokio::task::spawn_blocking(move || {
+        keyring_entry(&id)?
+            .set_password(&password)
+            .map_err(|e| AppError::Connection(format!("Keychain unavailable: {}", e)))
+    })
+    .await
+    .map_err(|e| AppError::Connection(e.to_string()))?
+}
+
+/// Remove a connection password from the OS keychain (missing entries are fine).
+#[tauri::command]
+async fn delete_connection_secret(id: String) -> Result<(), AppError> {
+    tokio::task::spawn_blocking(move || match keyring_entry(&id)?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(AppError::Connection(format!("Keychain unavailable: {}", e))),
+    })
+    .await
+    .map_err(|e| AppError::Connection(e.to_string()))?
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -138,6 +194,7 @@ async fn execute_query(
     config: ConnectionConfig,
     request: QueryRequest,
 ) -> Result<QueryResult, AppError> {
+    let config = resolve_config(config)?;
     let client = build_client(&config)?;
 
     let body = build_query_body(&request);
@@ -430,6 +487,7 @@ async fn get_explain_plan(
 
 #[tauri::command]
 async fn list_buckets(config: ConnectionConfig) -> Result<Vec<BucketInfo>, AppError> {
+    let config = resolve_config(config)?;
     let client = build_client(&config)?;
     let url = mgmt_url(&config, "/pools/default/buckets");
 
@@ -470,6 +528,7 @@ async fn get_keyspace_metadata(
         }]
     };
 
+    let config = resolve_config(config)?;
     let client = build_client(&config)?;
     let mut url = reqwest::Url::parse(&mgmt_url(&config, "/"))
         .map_err(|e| AppError::Connection(e.to_string()))?;
@@ -563,6 +622,8 @@ pub fn run() {
             infer_schema,
             test_connection,
             cancel_query,
+            set_connection_secret,
+            delete_connection_secret,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -579,6 +640,8 @@ mod tests {
             username: "Administrator".to_string(),
             password: "password".to_string(),
             tls: false,
+            id: None,
+            keychain: false,
         }
     }
 
@@ -589,6 +652,8 @@ mod tests {
             username: "dev".to_string(),
             password: "s3cr3t".to_string(),
             tls: true,
+            id: None,
+            keychain: false,
         }
     }
 
@@ -879,5 +944,41 @@ mod tests {
     fn query_request_deserializes_without_optional_fields() {
         let r: QueryRequest = serde_json::from_str(r#"{"statement":"SELECT 1"}"#).unwrap();
         assert!(r.named_parameters.is_none());
+    }
+
+    // --- resolve_config ---
+
+    #[test]
+    fn resolve_config_keeps_inline_password_without_touching_keychain() {
+        let mut cfg = test_config();
+        cfg.id = Some("x".to_string());
+        cfg.keychain = true; // password already present → no lookup
+        assert_eq!(resolve_config(cfg).unwrap().password, "password");
+    }
+
+    #[test]
+    fn connection_config_accepts_frontend_shape() {
+        let cfg: ConnectionConfig = serde_json::from_str(
+            r#"{"id":"a","name":"Prod","host":"h","port":8093,"username":"u","password":"","tls":false,"keychain":true}"#,
+        )
+        .unwrap();
+        assert!(cfg.keychain);
+        assert_eq!(cfg.id.as_deref(), Some("a"));
+    }
+
+    /// Needs a running Secret Service / Keychain; run with `cargo test -- --ignored`.
+    #[tokio::test]
+    #[ignore]
+    async fn keychain_roundtrip() {
+        let id = format!("test-{}", uuid::Uuid::new_v4());
+        set_connection_secret(id.clone(), "s3cr3t".to_string()).await.unwrap();
+        let mut cfg = test_config();
+        cfg.password = String::new();
+        cfg.id = Some(id.clone());
+        cfg.keychain = true;
+        assert_eq!(resolve_config(cfg.clone()).unwrap().password, "s3cr3t");
+        delete_connection_secret(id.clone()).await.unwrap();
+        delete_connection_secret(id).await.unwrap(); // idempotent
+        assert!(resolve_config(cfg).is_err());
     }
 }

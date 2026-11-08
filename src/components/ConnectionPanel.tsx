@@ -28,13 +28,7 @@ export default function ConnectionPanel({
     setStatus("testing");
     setErrorMsg("");
     try {
-      await testConnection({
-        host: selected.host,
-        port: selected.port,
-        username: selected.username,
-        password: selected.password,
-        tls: selected.tls,
-      });
+      await testConnection(selected);
       setStatus("ok");
     } catch (e: unknown) {
       setStatus("error");

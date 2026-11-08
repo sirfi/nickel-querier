@@ -100,6 +100,14 @@ export async function cancelQuery(
   return invoke<boolean>("cancel_query", { config, clientContextId });
 }
 
+export async function setConnectionSecret(id: string, password: string): Promise<void> {
+  return invoke<void>("set_connection_secret", { id, password });
+}
+
+export async function deleteConnectionSecret(id: string): Promise<void> {
+  return invoke<void>("delete_connection_secret", { id });
+}
+
 export async function testConnection(
   config: ConnectionConfig
 ): Promise<boolean> {
