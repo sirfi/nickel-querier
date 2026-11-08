@@ -6,7 +6,7 @@ import ResultViewer from "./components/ResultViewer";
 import QueryHistory from "./components/QueryHistory";
 import SavedQueries from "./components/SavedQueries";
 import SchemaExplorer from "./components/SchemaExplorer";
-import ExplainViewer from "./components/ExplainViewer";
+import ExplainViewer, { type BaselinePlan } from "./components/ExplainViewer";
 import ParamsPanel from "./components/ParamsPanel";
 import ResizeHandle from "./components/ResizeHandle";
 import AdviseViewer from "./components/AdviseViewer";
@@ -82,6 +82,9 @@ interface TabState {
   explainPlan: unknown;
   explainError: string | null;
   isExplaining: boolean;
+  /** Plan pinned for comparison with later EXPLAINs */
+  explainBaseline: BaselinePlan | null;
+  explainStatement: string;
   advice: Advice | null;
   adviseError: string | null;
   isAdvising: boolean;
@@ -100,6 +103,8 @@ function emptyTabState(): TabState {
     explainPlan: null,
     explainError: null,
     isExplaining: false,
+    explainBaseline: null,
+    explainStatement: "",
     advice: null,
     adviseError: null,
     isAdvising: false,
@@ -286,11 +291,12 @@ export default function App() {
     setActiveTabId(id);
   };
 
-  const handleAddTab = (query?: string) => {
+  const handleAddTab = (query?: string, label?: string) => {
     // New tab inherits the last active connection
     const connId = activeTab.connectionId;
     saveLastConnectionId(connId);
     const newTab = makeTab(connId, query ?? "");
+    if (label) newTab.label = label.length > 30 ? label.slice(0, 29) + "…" : label;
     setTabs((prev) => [...prev, newTab]);
     setTabStates((prev) => ({ ...prev, [newTab.id]: emptyTabState() }));
     setActiveTabId(newTab.id);
@@ -431,6 +437,7 @@ export default function App() {
       isExplaining: true,
       explainPlan: null,
       explainError: null,
+      explainStatement: stmt,
       resultTab: "explain",
     });
 
@@ -582,6 +589,7 @@ export default function App() {
                   onSelect={handleSavedSelect}
                   onRefresh={() => setSavedQueries(loadSavedQueries())}
                   pendingStatement={activeTab.query}
+                  onOpenShared={(q) => handleAddTab(q.statement, q.name)}
                 />
               )}
             </div>
@@ -708,6 +716,17 @@ export default function App() {
                   plan={activeState.explainPlan}
                   error={activeState.explainError}
                   isLoading={activeState.isExplaining}
+                  baseline={activeState.explainBaseline}
+                  onPinBaseline={() =>
+                    updateTabState(activeTabId, {
+                      explainBaseline: {
+                        plan: activeState.explainPlan,
+                        statement: activeState.explainStatement,
+                        pinnedAt: new Date().toISOString(),
+                      },
+                    })
+                  }
+                  onClearBaseline={() => updateTabState(activeTabId, { explainBaseline: null })}
                 />
               )}
               {activeState.resultTab === "advise" && (

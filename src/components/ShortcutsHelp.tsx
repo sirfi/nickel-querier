@@ -14,6 +14,7 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
       [`${mod}+Shift+A`, "Index Advisor (ADVISE)"],
       [`${mod}+Shift+F`, "Format query"],
       [`${mod}+S`, "Save query"],
+      [`${mod}+Shift+V`, "Clipboard history (recently copied fragments)"],
     ],
   },
   {

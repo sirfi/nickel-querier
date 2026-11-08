@@ -18,7 +18,7 @@ vi.mock("@monaco-editor/react", () => ({
           updateOptions: () => {},
           focus: () => {},
         },
-        { KeyMod: { CtrlCmd: 0, Shift: 0 }, KeyCode: { Enter: 0, KeyE: 0, KeyS: 0, KeyF: 0, KeyA: 0 } }
+        { KeyMod: { CtrlCmd: 0, Shift: 0 }, KeyCode: { Enter: 0, KeyE: 0, KeyS: 0, KeyF: 0, KeyA: 0, KeyV: 0 } }
       );
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -235,5 +235,48 @@ describe("App — review fixes (PR #12)", () => {
     expect(document.activeElement?.getAttribute("aria-label")).toBe("Close");
     fireEvent.keyDown(window, { key: "Escape" });
     expect(document.activeElement).toBe(editor);
+  });
+});
+
+describe("App plan diff", () => {
+  it("pins a plan and compares the next EXPLAIN against it", async () => {
+    getExplainPlan.mockResolvedValueOnce({
+      plan: { "#operator": "Sequence", "~children": [{ "#operator": "PrimaryScan3", index: "#primary" }] },
+    });
+    render(<App />);
+    fireEvent.click(screen.getAllByText("⚡ Explain")[0]);
+    fireEvent.click(await screen.findByText("📌 Pin as baseline"));
+
+    getExplainPlan.mockResolvedValueOnce({
+      plan: { "#operator": "Sequence", "~children": [{ "#operator": "IndexScan3", index: "idx_type" }] },
+    });
+    fireEvent.click(screen.getAllByText("⚡ Explain")[0]);
+    const table = await screen.findByRole("table", { name: "Plan differences" });
+    expect(table.textContent).toContain("PrimaryScan3");
+    expect(table.textContent).toContain("IndexScan3");
+    expect(screen.getByText("+1 added")).toBeTruthy();
+    expect(screen.getByText("−1 removed")).toBeTruthy();
+  });
+});
+
+describe("App query sharing", () => {
+  it("copies a saved query link and opens it in a new tab", async () => {
+    const { encodeShareLink } = await import("../lib/share");
+    localStorage.setItem("nq_saved", JSON.stringify([
+      { id: "s1", name: "Top hotels", statement: "SELECT 'shared'", created_at: "2026-01-01T00:00:00Z", tags: [] },
+    ]));
+    const writeText = vi.fn(async () => {});
+    Object.assign(navigator, { clipboard: { writeText } });
+    render(<App />);
+    fireEvent.click(screen.getByText("✦ Saved"));
+    fireEvent.click(screen.getByRole("button", { name: "Copy share link for Top hotels" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    const link = (writeText.mock.calls[0] as unknown as [string])[0];
+    expect(link).toBe(encodeShareLink({ name: "Top hotels", statement: "SELECT 'shared'", tags: [] }));
+
+    vi.spyOn(window, "prompt").mockReturnValue(link);
+    fireEvent.click(screen.getByText("🔗 Open link"));
+    expect((screen.getByTestId("editor") as HTMLTextAreaElement).value).toBe("SELECT 'shared'");
+    expect(document.querySelector(".query-tab.active .query-tab-label")?.textContent).toBe("Top hotels");
   });
 });

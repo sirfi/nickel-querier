@@ -10,7 +10,13 @@ import {
   fieldReplaceStart,
   typedPathBefore,
 } from "../lib/completions";
+import ClipboardHistory from "./ClipboardHistory";
 import {
+  loadClips,
+  addClip,
+  removeClip,
+  clearClips,
+  type Clip,
   loadEditorFontSize,
   saveEditorFontSize,
   EDITOR_FONT_SIZE_MIN,
@@ -67,6 +73,31 @@ export default function QueryEditor({
   const [fontSize, setFontSize] = useState<number>(() => loadEditorFontSize());
   // Monaco loads asynchronously; effects that need it re-run once it is ready.
   const [monacoReady, setMonacoReady] = useState(false);
+  const [showClips, setShowClips] = useState(false);
+  const [clips, setClips] = useState<Clip[]>(() => loadClips());
+
+  /** Record what the editor copies/cuts (Monaco copies the whole line when nothing is selected). */
+  const recordCopy = () => {
+    const editor = editorRef.current;
+    const model = editor?.getModel();
+    const sel = editor?.getSelection();
+    if (!editor || !model || !sel) return;
+    const text = sel.isEmpty()
+      ? model.getLineContent(sel.positionLineNumber) + "\n"
+      : model.getValueInRange(sel);
+    setClips(addClip(text));
+  };
+
+  const insertClip = (text: string) => {
+    const editor = editorRef.current;
+    const sel = editor?.getSelection();
+    setShowClips(false);
+    if (!editor || !sel) return;
+    editor.pushUndoStop();
+    editor.executeEdits("clipboard-history", [{ range: sel, text, forceMoveMarkers: true }]);
+    editor.pushUndoStop();
+    editor.focus();
+  };
 
   const handleBeforeMount: BeforeMount = (monaco) => {
     monacoRef.current = monaco;
@@ -171,6 +202,14 @@ export default function QueryEditor({
       monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyA,
       advise
     );
+    // Ctrl/Cmd + Shift + V: clipboard history
+    editor.addCommand(
+      monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyV,
+      () => {
+        setClips(loadClips());
+        setShowClips(true);
+      }
+    );
     // Ctrl/Cmd + S to save
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () =>
       callbacksRef.current.onSave()
@@ -247,7 +286,7 @@ export default function QueryEditor({
   };
 
   return (
-    <div className="query-editor-wrapper">
+    <div className="query-editor-wrapper" onCopyCapture={recordCopy} onCutCapture={recordCopy}>
       <div className="qe-toolbar">
         {onCancel ? (
           <button
@@ -342,6 +381,33 @@ export default function QueryEditor({
             <option value="not_bounded">not_bounded</option>
             <option value="request_plus">request_plus</option>
           </select>
+        )}
+        <button
+          className="btn btn-ghost"
+          onClick={() => {
+            setClips(loadClips());
+            setShowClips((v) => !v);
+          }}
+          data-tooltip="Clipboard history (Ctrl+Shift+V)"
+          aria-label="Clipboard history"
+          aria-expanded={showClips}
+        >
+          📋
+        </button>
+        {showClips && (
+          <ClipboardHistory
+            clips={clips}
+            onInsert={insertClip}
+            onRemove={(t) => setClips(removeClip(t))}
+            onClear={() => {
+              clearClips();
+              setClips([]);
+            }}
+            onClose={() => {
+              setShowClips(false);
+              editorRef.current?.focus();
+            }}
+          />
         )}
         <span className="qe-hint">
           Runs the selection, or the statement under the cursor

@@ -2,6 +2,7 @@
 // Nickel Querier — Persistence (localStorage fallback for dev)
 // ============================================================
 import { HistoryEntry, SavedQuery, SavedConnection, QueryTab } from "./types";
+import { normalizeFolder, rebaseFolder, isInFolder, parentFolder } from "./folders";
 
 const HISTORY_KEY = "nq_history";
 const SAVED_KEY = "nq_saved";
@@ -12,6 +13,10 @@ const THEME_KEY = "nq_theme";
 const EDITOR_FONT_SIZE_KEY = "nq_editor_font_size";
 const TABS_KEY = "nq_tabs";
 const LAYOUT_KEY = "nq_layout";
+const SAVED_FOLDERS_KEY = "nq_saved_folders";
+const CLIPS_KEY = "nq_clips";
+export const MAX_CLIPS = 30;
+const MAX_CLIP_LENGTH = 20_000;
 const MAX_HISTORY = 200;
 
 const EDITOR_FONT_SIZE_MIN = 10;
@@ -77,6 +82,53 @@ export function updateSavedQuery(updated: SavedQuery): void {
   save(SAVED_KEY, saved);
 }
 
+// ---------- Saved Query Folders ----------
+
+/** Explicitly created folders (folders that contain queries exist implicitly). */
+export function loadSavedFolders(): string[] {
+  return (load<string[]>(SAVED_FOLDERS_KEY) ?? []).map(normalizeFolder).filter(Boolean);
+}
+
+export function addSavedFolder(path: string): string {
+  const p = normalizeFolder(path);
+  if (!p) return p;
+  const folders = loadSavedFolders();
+  if (!folders.includes(p)) save(SAVED_FOLDERS_KEY, [...folders, p]);
+  return p;
+}
+
+/** Rename / move a folder; queries and sub-folders move with it. */
+export function renameSavedFolder(from: string, to: string): void {
+  const src = normalizeFolder(from);
+  const dst = normalizeFolder(to);
+  if (!src || src === dst || isInFolder(dst, src)) return; // no-op, or into itself
+  save(SAVED_KEY, loadSavedQueries().map((q) =>
+    isInFolder(normalizeFolder(q.folder), src) ? { ...q, folder: rebaseFolder(normalizeFolder(q.folder), src, dst) } : q
+  ));
+  const folders = loadSavedFolders().map((f) => rebaseFolder(f, src, dst)).filter(Boolean);
+  save(SAVED_FOLDERS_KEY, [...new Set(folders)]);
+}
+
+/** Delete a folder: its queries and sub-folders move to the parent folder. */
+export function deleteSavedFolder(path: string): void {
+  const p = normalizeFolder(path);
+  if (!p) return;
+  const parent = parentFolder(p);
+  save(SAVED_KEY, loadSavedQueries().map((q) =>
+    isInFolder(normalizeFolder(q.folder), p) ? { ...q, folder: rebaseFolder(normalizeFolder(q.folder), p, parent) } : q
+  ));
+  const folders = loadSavedFolders()
+    .filter((f) => f !== p)
+    .map((f) => rebaseFolder(f, p, parent))
+    .filter(Boolean);
+  save(SAVED_FOLDERS_KEY, [...new Set(folders)]);
+}
+
+export function moveSavedQuery(id: string, folder: string): void {
+  const f = normalizeFolder(folder);
+  save(SAVED_KEY, loadSavedQueries().map((q) => (q.id === id ? { ...q, folder: f } : q)));
+}
+
 export const SAVED_QUERIES_EXPORT_FORMAT = "nickel-querier/saved-queries";
 
 /** File contents for exporting saved queries. */
@@ -124,6 +176,7 @@ export function importSavedQueries(json: string): { added: number; skipped: numb
       statement: raw.statement,
       created_at: typeof raw.created_at === "string" ? raw.created_at : new Date().toISOString(),
       tags: Array.isArray(raw.tags) ? raw.tags.filter((t): t is string => typeof t === "string") : [],
+      folder: typeof raw.folder === "string" ? normalizeFolder(raw.folder) : undefined,
     });
   }
   save(SAVED_KEY, [...added, ...existing]);
@@ -266,6 +319,36 @@ export function saveTabs(tabs: QueryTab[], activeTabId: string): void {
     })),
     activeTabId,
   });
+}
+
+// ---------- Clipboard history (fragments copied in the editor) ----------
+
+export interface Clip {
+  text: string;
+  at: string; // ISO
+}
+
+export function loadClips(): Clip[] {
+  const clips = load<Clip[]>(CLIPS_KEY);
+  return Array.isArray(clips) ? clips.filter((c) => typeof c?.text === "string") : [];
+}
+
+/** Add a fragment to the top (an identical earlier entry moves up). Returns the new list. */
+export function addClip(text: string, now = new Date()): Clip[] {
+  if (!text.trim() || text.length > MAX_CLIP_LENGTH) return loadClips();
+  const clips = [{ text, at: now.toISOString() }, ...loadClips().filter((c) => c.text !== text)].slice(0, MAX_CLIPS);
+  save(CLIPS_KEY, clips);
+  return clips;
+}
+
+export function removeClip(text: string): Clip[] {
+  const clips = loadClips().filter((c) => c.text !== text);
+  save(CLIPS_KEY, clips);
+  return clips;
+}
+
+export function clearClips(): void {
+  save(CLIPS_KEY, []);
 }
 
 // ---------- Layout ----------

@@ -1,0 +1,48 @@
+.ch-root {
+  position: absolute;
+  top: 100%;
+  right: 8px;
+  z-index: 50;
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  max-height: 360px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+.ch-head { display: flex; gap: 6px; padding: 8px; border-bottom: 1px solid var(--border); }
+.ch-filter { flex: 1; font-size: 12px; }
+.ch-empty { padding: 16px; font-size: 12px; color: var(--text-muted); text-align: center; }
+.ch-list { list-style: none; overflow-y: auto; margin: 0; padding: 4px; }
+.ch-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.ch-item.active { background: var(--bg-hover); }
+.ch-text {
+  flex: 1;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 4.8em;
+  overflow: hidden;
+}
+.ch-remove {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+.ch-item.active .ch-remove, .ch-remove:focus-visible { opacity: 1; }

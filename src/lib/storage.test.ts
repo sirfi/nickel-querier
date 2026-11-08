@@ -422,3 +422,79 @@ describe("legacy connection scrub", () => {
     expect(localStorage.getItem("nq_connection")).toBeNull();
   });
 });
+
+describe("saved query folders", () => {
+  const sq = (id: string, folder?: string) => ({ id, name: id, statement: "S", created_at: "", tags: [], folder });
+
+  it("renames a folder with its queries and sub-folders", async () => {
+    const s = await import("./storage");
+    localStorage.clear();
+    s.addSavedQuery(sq("a", "Reports"));
+    s.addSavedQuery(sq("b", "Reports/Daily"));
+    s.addSavedQuery(sq("c", "Other"));
+    s.addSavedFolder("Reports/Empty");
+    s.renameSavedFolder("Reports", "Archive/Old");
+    const byId = Object.fromEntries(s.loadSavedQueries().map((q) => [q.id, q.folder]));
+    expect(byId).toEqual({ a: "Archive/Old", b: "Archive/Old/Daily", c: "Other" });
+    expect(s.loadSavedFolders()).toEqual(["Archive/Old/Empty"]);
+  });
+
+  it("refuses to move a folder into itself", async () => {
+    const s = await import("./storage");
+    localStorage.clear();
+    s.addSavedQuery(sq("a", "R"));
+    s.renameSavedFolder("R", "R/sub");
+    expect(s.loadSavedQueries()[0].folder).toBe("R");
+  });
+
+  it("deleting a folder moves its contents to the parent", async () => {
+    const s = await import("./storage");
+    localStorage.clear();
+    s.addSavedQuery(sq("a", "R/X"));
+    s.addSavedQuery(sq("b", "R/X/Y"));
+    s.addSavedFolder("R/X");
+    s.deleteSavedFolder("R/X");
+    const byId = Object.fromEntries(s.loadSavedQueries().map((q) => [q.id, q.folder]));
+    expect(byId).toEqual({ a: "R", b: "R/Y" });
+    expect(s.loadSavedFolders()).toEqual([]);
+  });
+
+  it("moves a single query and keeps folders through export/import", async () => {
+    const s = await import("./storage");
+    localStorage.clear();
+    s.addSavedQuery(sq("a"));
+    s.moveSavedQuery("a", " Team / Ops ");
+    expect(s.loadSavedQueries()[0].folder).toBe("Team/Ops");
+    const file = s.exportSavedQueries(s.loadSavedQueries());
+    localStorage.clear();
+    s.importSavedQueries(file);
+    expect(s.loadSavedQueries()[0].folder).toBe("Team/Ops");
+  });
+});
+
+describe("clipboard history", () => {
+  it("keeps the newest unique fragments first, capped", async () => {
+    const s = await import("./storage");
+    localStorage.clear();
+    s.addClip("a");
+    s.addClip("b");
+    s.addClip("a"); // moves to top
+    expect(s.loadClips().map((c) => c.text)).toEqual(["a", "b"]);
+    for (let i = 0; i < 40; i++) s.addClip(`x${i}`);
+    expect(s.loadClips()).toHaveLength(s.MAX_CLIPS);
+    expect(s.loadClips()[0].text).toBe("x39");
+  });
+
+  it("ignores blank / huge fragments and supports removal", async () => {
+    const s = await import("./storage");
+    localStorage.clear();
+    s.addClip("   ");
+    s.addClip("y".repeat(20_001));
+    expect(s.loadClips()).toEqual([]);
+    s.addClip("keep");
+    s.addClip("drop");
+    expect(s.removeClip("drop").map((c) => c.text)).toEqual(["keep"]);
+    s.clearClips();
+    expect(s.loadClips()).toEqual([]);
+  });
+});

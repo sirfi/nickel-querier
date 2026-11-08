@@ -6,6 +6,7 @@ import { useEffect } from "react";
 const commands: Record<number, () => void> = {};
 let selectionText = "";
 let cursorOffset: number | null = null;
+const inserted: string[] = [];
 
 const fakeEditor = {
   addCommand: (key: number, fn: () => void) => {
@@ -17,17 +18,23 @@ const fakeEditor = {
     getValue: () => "",
     setValue: () => {},
     getOffsetAt: () => cursorOffset ?? 0,
+    getLineContent: () => "SELECT whole_line",
     getPositionAt: () => ({ lineNumber: 1, column: 1 }),
   }),
   getPosition: () => (cursorOffset === null ? null : { lineNumber: 1, column: cursorOffset + 1 }),
   setPosition: () => {},
   updateOptions: () => {},
+  pushUndoStop: () => {},
+  executeEdits: (_src: string, edits: { text: string }[]) => {
+    inserted.push(edits[0].text);
+    return true;
+  },
   focus: () => {},
 };
 
 const fakeMonaco = {
   KeyMod: { CtrlCmd: 1 << 11, Shift: 1 << 10 },
-  KeyCode: { Enter: 3, KeyE: 35, KeyS: 49, KeyF: 36, KeyA: 31 },
+  KeyCode: { Enter: 3, KeyE: 35, KeyS: 49, KeyF: 36, KeyA: 31, KeyV: 52 },
   languages: {
     getLanguages: () => [{ id: "n1ql" }],
     registerCompletionItemProvider: () => ({ dispose: () => {} }),
@@ -55,6 +62,8 @@ afterEach(() => {
   cleanup();
   selectionText = "";
   cursorOffset = null;
+  inserted.length = 0;
+  localStorage.clear();
 });
 
 const RUN_KEY = fakeMonaco.KeyMod.CtrlCmd | fakeMonaco.KeyCode.Enter;
@@ -101,5 +110,25 @@ describe("QueryEditor", () => {
     commands[RUN_KEY]();
     expect(first).not.toHaveBeenCalled();
     expect(second).toHaveBeenCalledWith("SELECT 42");
+  });
+});
+
+describe("QueryEditor clipboard history", () => {
+  it("records copied fragments and inserts one at the cursor", () => {
+    renderEditor();
+    const wrapper = screen.getByTestId("monaco").parentElement!.parentElement!;
+    selectionText = "WHERE type = 'hotel'";
+    fireEvent.copy(wrapper);
+    selectionText = "";
+    fireEvent.cut(wrapper); // empty selection copies the whole line
+    fireEvent.click(screen.getByRole("button", { name: "Clipboard history" }));
+    const options = screen.getAllByRole("option");
+    expect(options.map((o) => o.textContent)).toEqual([
+      expect.stringContaining("SELECT whole_line"),
+      expect.stringContaining("WHERE type = 'hotel'"),
+    ]);
+    fireEvent.click(options[1]);
+    expect(inserted).toEqual(["WHERE type = 'hotel'"]);
+    expect(screen.queryByRole("dialog", { name: "Clipboard history" })).toBeNull();
   });
 });

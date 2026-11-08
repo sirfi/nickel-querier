@@ -111,3 +111,40 @@
   margin: 0;
   color: var(--text-primary);
 }
+
+/* ---- Plan diff ---- */
+.ev-baseline { font-size: 11px; color: var(--text-secondary); font-weight: 400; }
+.pd-root { font-size: 12px; }
+.pd-summary { border-collapse: collapse; margin-bottom: 10px; }
+.pd-summary th, .pd-summary td {
+  text-align: left; padding: 3px 12px 3px 0; font-weight: 400;
+  font-family: var(--font-mono); color: var(--text-primary);
+}
+.pd-summary thead th { color: var(--text-muted); font-family: var(--font-ui); font-size: 11px; }
+.pd-summary tbody th { color: var(--text-secondary); font-family: var(--font-ui); }
+.pd-summary-diff td { color: var(--warning); }
+.pd-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+.pd-stats { display: flex; gap: 6px; }
+.pd-chip { padding: 1px 6px; border-radius: 10px; font-size: 11px; border: 1px solid var(--border); }
+.pd-identical { color: var(--success); }
+.pd-only { display: flex; align-items: center; gap: 4px; color: var(--text-secondary); font-size: 11px; margin-left: auto; }
+.pd-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.pd-table th {
+  text-align: left; font-size: 11px; color: var(--text-muted); font-weight: 600;
+  padding: 4px 6px; border-bottom: 1px solid var(--border);
+}
+.pd-table td { vertical-align: top; padding: 2px 6px; border-bottom: 1px solid var(--border); }
+.pd-step { font-family: var(--font-mono); display: flex; flex-wrap: wrap; gap: 2px 8px; }
+.pd-op { font-weight: 600; color: var(--text-primary); }
+.pd-prop { color: var(--text-muted); word-break: break-all; }
+.pd-prop-changed { color: var(--warning); font-weight: 600; }
+/* Colour is paired with a symbol in the cell so meaning does not rely on colour alone */
+.pd-added td:nth-child(2) { background: rgba(63, 185, 80, 0.12); }
+.pd-added td:nth-child(2) .pd-op::before { content: "+ "; color: var(--success); }
+.pd-removed td:nth-child(1) { background: rgba(248, 81, 73, 0.12); }
+.pd-removed td:nth-child(1) .pd-op::before { content: "− "; color: var(--error); }
+.pd-changed td { background: rgba(210, 153, 34, 0.10); }
+.pd-changed .pd-op::before { content: "~ "; color: var(--warning); }
+.pd-added .pd-chip, .pd-chip.pd-added { color: var(--success); }
+.pd-chip.pd-removed { color: var(--error); }
+.pd-chip.pd-changed { color: var(--warning); }
