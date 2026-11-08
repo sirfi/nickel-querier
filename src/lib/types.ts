@@ -8,6 +8,10 @@ export interface ConnectionConfig {
   username: string;
   password: string;
   tls: boolean;
+  /** Verify the server certificate when TLS is on (default true) */
+  verify_tls?: boolean;
+  /** Cluster Manager REST port (default 8091 / 18091) */
+  mgmt_port?: number;
   /** Saved connection id — lets the backend read the password from the keychain */
   id?: string;
   keychain?: boolean;
@@ -99,6 +103,10 @@ export interface SavedConnection {
   /** Empty when the password is stored in the OS keychain */
   password: string;
   tls: boolean;
+  /** Verify the server certificate when TLS is on (default true) */
+  verify_tls?: boolean;
+  /** Cluster Manager REST port (default 8091 / 18091) */
+  mgmt_port?: number;
   /** True when the password lives in the OS keychain */
   keychain?: boolean;
 }

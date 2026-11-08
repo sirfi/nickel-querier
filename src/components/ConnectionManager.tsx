@@ -53,6 +53,8 @@ export default function ConnectionManager({
       // Keychain passwords are never shown; leaving the field blank keeps them.
       password: conn.keychain ? "" : conn.password,
       tls: conn.tls,
+      verify_tls: conn.verify_tls,
+      mgmt_port: conn.mgmt_port,
       keychain: conn.keychain,
     });
     setEditingId(conn.id);
@@ -71,6 +73,8 @@ export default function ConnectionManager({
         username: draft.username,
         password: draft.password,
         tls: draft.tls,
+        verify_tls: draft.verify_tls,
+        mgmt_port: draft.mgmt_port,
         id: editingId ?? undefined,
         keychain: !!draft.keychain && !draft.password,
       });
@@ -158,6 +162,9 @@ export default function ConnectionManager({
                 <span className="cm-item-name">{conn.name}</span>
                 <span className="cm-item-host">
                   {conn.tls ? "https" : "http"}://{conn.host}:{conn.port}
+                  {conn.tls && conn.verify_tls === false && (
+                    <span title="Certificate verification is off"> ⚠</span>
+                  )}
                 </span>
                 <span className="cm-item-user">
                   {conn.username}
@@ -234,6 +241,35 @@ export default function ConnectionManager({
                   />
                   TLS / HTTPS
                 </label>
+                {draft.tls && (
+                  <label
+                    className="conn-tls-label"
+                    title="Turn off only for self-signed certificates on trusted networks"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={draft.verify_tls !== false}
+                      onChange={(e) => setDraft({ ...draft, verify_tls: e.target.checked })}
+                    />
+                    Verify TLS certificate
+                  </label>
+                )}
+              </div>
+
+              <div className="input-group">
+                <label>Management Port</label>
+                <input
+                  className="input"
+                  type="number"
+                  value={draft.mgmt_port ?? ""}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      mgmt_port: e.target.value === "" ? undefined : Number(e.target.value),
+                    })
+                  }
+                  placeholder={draft.tls ? "18091" : "8091"}
+                />
               </div>
 
               <div className="input-group">

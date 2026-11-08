@@ -15,8 +15,35 @@ pub enum AppError {
 
 impl From<reqwest::Error> for AppError {
     fn from(e: reqwest::Error) -> Self {
-        AppError::Http(e.to_string())
+        AppError::Http(describe_reqwest_error(&e))
     }
+}
+
+/// reqwest's Display hides the root cause ("error sending request"); walk the
+/// source chain and add hints for the common TLS / connection problems.
+fn describe_reqwest_error(e: &reqwest::Error) -> String {
+    let mut parts = vec![e.to_string()];
+    let mut source = std::error::Error::source(e);
+    while let Some(s) = source {
+        let text = s.to_string();
+        if !parts.iter().any(|p| p.contains(&text)) {
+            parts.push(text);
+        }
+        source = s.source();
+    }
+    let mut msg = parts.join(": ");
+    let lower = msg.to_lowercase();
+    if lower.contains("certificate") || lower.contains("unknownissuer") {
+        msg.push_str(
+            " — the server certificate could not be verified. For self-signed certificates, \
+             turn off \"Verify TLS certificate\" in the connection settings.",
+        );
+    } else if e.is_connect() {
+        msg.push_str(" — check host, port and TLS settings.");
+    } else if e.is_timeout() {
+        msg.push_str(" — the server did not respond in time.");
+    }
+    msg
 }
 
 impl From<serde_json::Error> for AppError {
@@ -33,6 +60,12 @@ pub struct ConnectionConfig {
     #[serde(default)]
     pub password: String,
     pub tls: bool,
+    /// Verify the server certificate when `tls` is on (off for self-signed certs).
+    #[serde(default = "default_true")]
+    pub verify_tls: bool,
+    /// Cluster Manager (REST) port; defaults to 8091 / 18091.
+    #[serde(default)]
+    pub mgmt_port: Option<u16>,
     /// Saved-connection id; used to look the password up in the OS keychain.
     #[serde(default)]
     pub id: Option<String>,
@@ -49,10 +82,16 @@ impl Default for ConnectionConfig {
             username: "Administrator".to_string(),
             password: "password".to_string(),
             tls: false,
+            verify_tls: true,
+            mgmt_port: None,
             id: None,
             keychain: false,
         }
     }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 // ---------- OS keychain ----------
@@ -170,7 +209,9 @@ fn query_url(config: &ConnectionConfig) -> String {
 /// Build the base URL for the Management API
 fn mgmt_url(config: &ConnectionConfig, path: &str) -> String {
     let scheme = if config.tls { "https" } else { "http" };
-    let port = if config.tls { 18091 } else { 8091 };
+    let port = config
+        .mgmt_port
+        .unwrap_or(if config.tls { 18091 } else { 8091 });
     format!("{}://{}:{}{}", scheme, config.host, port, path)
 }
 
@@ -179,7 +220,7 @@ fn build_client(config: &ConnectionConfig) -> Result<reqwest::Client, AppError> 
         .connect_timeout(std::time::Duration::from_secs(10))
         // Generous upper bound; the per-query timeout is enforced by the server.
         .timeout(std::time::Duration::from_secs(15 * 60));
-    let builder = if config.tls {
+    let builder = if config.tls && !config.verify_tls {
         builder.danger_accept_invalid_certs(true)
     } else {
         builder
@@ -640,6 +681,8 @@ mod tests {
             username: "Administrator".to_string(),
             password: "password".to_string(),
             tls: false,
+            verify_tls: true,
+            mgmt_port: None,
             id: None,
             keychain: false,
         }
@@ -652,6 +695,8 @@ mod tests {
             username: "dev".to_string(),
             password: "s3cr3t".to_string(),
             tls: true,
+            verify_tls: true,
+            mgmt_port: None,
             id: None,
             keychain: false,
         }
@@ -980,5 +1025,39 @@ mod tests {
         delete_connection_secret(id.clone()).await.unwrap();
         delete_connection_secret(id).await.unwrap(); // idempotent
         assert!(resolve_config(cfg).is_err());
+    }
+
+    // --- TLS / mgmt port options ---
+
+    #[test]
+    fn verify_tls_defaults_to_true_when_missing() {
+        let cfg: ConnectionConfig = serde_json::from_str(
+            r#"{"host":"h","port":18093,"username":"u","password":"p","tls":true}"#,
+        )
+        .unwrap();
+        assert!(cfg.verify_tls);
+        assert!(cfg.mgmt_port.is_none());
+    }
+
+    #[test]
+    fn mgmt_url_uses_custom_port() {
+        let mut cfg = tls_config();
+        cfg.mgmt_port = Some(9000);
+        assert_eq!(mgmt_url(&cfg, "/x"), "https://cb.example.com:9000/x");
+    }
+
+    #[tokio::test]
+    async fn connection_refused_error_has_hint() {
+        // Port 1 on localhost is not listening.
+        let mut cfg = test_config();
+        cfg.port = 1;
+        let err = execute_query(
+            cfg,
+            QueryRequest { statement: "SELECT 1".into(), ..Default::default() },
+        )
+        .await
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("check host, port and TLS settings"), "{}", msg);
     }
 }
