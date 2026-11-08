@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import ConnectionPanel from "./components/ConnectionPanel";
 import QueryEditor from "./components/QueryEditor";
 import QueryTabs from "./components/QueryTabs";
@@ -8,7 +8,7 @@ import SavedQueries from "./components/SavedQueries";
 import SchemaExplorer from "./components/SchemaExplorer";
 import ExplainViewer from "./components/ExplainViewer";
 
-import { executeQuery, getExplainPlan } from "./lib/commands";
+import { executeQuery, getExplainPlan, cancelQuery } from "./lib/commands";
 import {
   loadHistory,
   addHistory,
@@ -59,6 +59,9 @@ interface TabState {
   result: QueryResult | null;
   queryError: string | null;
   isRunning: boolean;
+  /** client_context_id of the running query (for cancellation) */
+  runningContextId: string | null;
+  cancelRequested: boolean;
   explainPlan: unknown;
   explainError: string | null;
   isExplaining: boolean;
@@ -71,6 +74,8 @@ function emptyTabState(): TabState {
     result: null,
     queryError: null,
     isRunning: false,
+    runningContextId: null,
+    cancelRequested: false,
     explainPlan: null,
     explainError: null,
     isExplaining: false,
@@ -203,8 +208,11 @@ export default function App() {
     if (!stmt) return;
     const tabId = activeTabId;
 
+    const contextId = crypto.randomUUID();
     updateTabState(tabId, {
       isRunning: true,
+      runningContextId: contextId,
+      cancelRequested: false,
       queryError: null,
       result: null,
       resultTab: "results",
@@ -216,8 +224,9 @@ export default function App() {
         statement: stmt,
         timeout: "60s",
         scan_consistency: "not_bounded",
+        client_context_id: contextId,
       });
-      updateTabState(tabId, { result: res, isRunning: false });
+      updateTabState(tabId, { result: res, isRunning: false, runningContextId: null });
       const entry: HistoryEntry = {
         id: crypto.randomUUID(),
         statement: stmt,
@@ -229,8 +238,9 @@ export default function App() {
       addHistory(entry);
       setHistory(loadHistory());
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      updateTabState(tabId, { queryError: msg, isRunning: false });
+      const raw = e instanceof Error ? e.message : String(e);
+      const msg = cancelledRef.current.delete(contextId) ? `Query cancelled.\n\n${raw}` : raw;
+      updateTabState(tabId, { queryError: msg, isRunning: false, runningContextId: null });
       const entry: HistoryEntry = {
         id: crypto.randomUUID(),
         statement: stmt,
@@ -244,6 +254,22 @@ export default function App() {
       setHistory(loadHistory());
     }
   }, [activeConnection, activeTabId]);
+
+  // Context ids the user asked to cancel (read inside handleRun's catch).
+  const cancelledRef = useRef<Set<string>>(new Set());
+
+  const handleCancel = useCallback(async () => {
+    const contextId = activeState.runningContextId;
+    if (!contextId) return;
+    cancelledRef.current.add(contextId);
+    updateTabState(activeTabId, { cancelRequested: true });
+    try {
+      await cancelQuery(activeConnection, contextId);
+    } catch (e: unknown) {
+      // The query may already have finished; surface nothing but keep running state honest.
+      console.warn("cancel failed", e);
+    }
+  }, [activeConnection, activeTabId, activeState.runningContextId]);
 
   const handleExplain = useCallback(async (statement: string) => {
     const stmt = statement.trim();
@@ -391,6 +417,8 @@ export default function App() {
               onChange={(q) => updateActiveTab({ query: q })}
               onRun={handleRun}
               onExplain={handleExplain}
+              onCancel={activeState.isRunning ? handleCancel : undefined}
+              isCancelling={activeState.cancelRequested}
               onSave={handleSaveQuery}
               isRunning={activeState.isRunning || activeState.isExplaining}
               schemaFields={activeState.schemaFields}

@@ -92,6 +92,14 @@ export async function inferSchema(
   });
 }
 
+/** Stop a running request. Resolves true if a request was found and stopped. */
+export async function cancelQuery(
+  config: ConnectionConfig,
+  clientContextId: string
+): Promise<boolean> {
+  return invoke<boolean>("cancel_query", { config, clientContextId });
+}
+
 export async function testConnection(
   config: ConnectionConfig
 ): Promise<boolean> {

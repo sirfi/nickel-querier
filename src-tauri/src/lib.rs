@@ -46,12 +46,22 @@ impl Default for ConnectionConfig {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct QueryRequest {
     pub statement: String,
+    #[serde(default)]
     pub timeout: Option<String>,
+    #[serde(default)]
     pub scan_consistency: Option<String>,
+    /// Positional parameters (`$1`, `$2`, …) sent as `args`.
+    #[serde(default)]
     pub parameters: Option<serde_json::Value>,
+    /// Named parameters (`$name`); keys may be given with or without `$`.
+    #[serde(default)]
+    pub named_parameters: Option<serde_json::Map<String, serde_json::Value>>,
+    /// Identifier used to cancel the request via `system:active_requests`.
+    #[serde(default)]
+    pub client_context_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -130,19 +140,7 @@ async fn execute_query(
 ) -> Result<QueryResult, AppError> {
     let client = build_client(&config)?;
 
-    let mut body = serde_json::json!({
-        "statement": request.statement,
-    });
-
-    if let Some(timeout) = &request.timeout {
-        body["timeout"] = serde_json::Value::String(timeout.clone());
-    }
-    if let Some(scan_consistency) = &request.scan_consistency {
-        body["scan_consistency"] = serde_json::Value::String(scan_consistency.clone());
-    }
-    if let Some(params) = &request.parameters {
-        body["args"] = params.clone();
-    }
+    let body = build_query_body(&request);
 
     let response = client
         .post(query_url(&config))
@@ -154,6 +152,32 @@ async fn execute_query(
     let http_status = response.status().as_u16();
     let text = response.text().await?;
     parse_query_response(http_status, &text)
+}
+
+/// Build the JSON body for a Query Service request.
+fn build_query_body(request: &QueryRequest) -> serde_json::Value {
+    let mut body = serde_json::json!({ "statement": request.statement });
+    if let Some(timeout) = &request.timeout {
+        body["timeout"] = serde_json::Value::String(timeout.clone());
+    }
+    if let Some(sc) = &request.scan_consistency {
+        body["scan_consistency"] = serde_json::Value::String(sc.clone());
+    }
+    if let Some(params) = &request.parameters {
+        if params.as_array().map(|a| !a.is_empty()).unwrap_or(true) {
+            body["args"] = params.clone();
+        }
+    }
+    if let Some(named) = &request.named_parameters {
+        for (k, v) in named {
+            let key = if k.starts_with('$') { k.clone() } else { format!("${}", k) };
+            body[key] = v.clone();
+        }
+    }
+    if let Some(id) = &request.client_context_id {
+        body["client_context_id"] = serde_json::Value::String(id.clone());
+    }
+    body
 }
 
 /// Format the `errors` array of a Query Service response as `[code] msg; …`.
@@ -392,8 +416,7 @@ async fn get_explain_plan(
         QueryRequest {
             statement: explain_stmt,
             timeout: Some("30s".to_string()),
-            scan_consistency: None,
-            parameters: None,
+            ..Default::default()
         },
     )
     .await?;
@@ -491,12 +514,30 @@ async fn infer_schema(
         QueryRequest {
             statement: stmt,
             timeout: Some("30s".to_string()),
-            scan_consistency: None,
-            parameters: None,
+            ..Default::default()
         },
     )
     .await?;
     Ok(parse_infer_fields(&result.results))
+}
+
+/// Cancel a running request started with the given `client_context_id`.
+#[tauri::command]
+async fn cancel_query(
+    config: ConnectionConfig,
+    client_context_id: String,
+) -> Result<bool, AppError> {
+    let result = execute_query(
+        config,
+        QueryRequest {
+            statement: "DELETE FROM system:active_requests WHERE clientContextID = $1".to_string(),
+            timeout: Some("10s".to_string()),
+            parameters: Some(serde_json::json!([client_context_id])),
+            ..Default::default()
+        },
+    )
+    .await?;
+    Ok(result.metrics.mutation_count > 0)
 }
 
 #[tauri::command]
@@ -504,8 +545,7 @@ async fn test_connection(config: ConnectionConfig) -> Result<bool, AppError> {
     let request = QueryRequest {
         statement: "SELECT 1 AS connected".to_string(),
         timeout: Some("5s".to_string()),
-        scan_consistency: None,
-        parameters: None,
+        ..Default::default()
     };
     execute_query(config, request).await?;
     Ok(true)
@@ -522,6 +562,7 @@ pub fn run() {
             get_keyspace_metadata,
             infer_schema,
             test_connection,
+            cancel_query,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -797,5 +838,46 @@ mod tests {
         assert!(matches!(mgmt_error(401, ""), AppError::Connection(_)));
         assert!(matches!(mgmt_error(403, ""), AppError::Connection(_)));
         assert!(matches!(mgmt_error(500, "boom"), AppError::Http(_)));
+    }
+
+    // --- build_query_body ---
+
+    #[test]
+    fn query_body_contains_all_options() {
+        let mut named = serde_json::Map::new();
+        named.insert("city".to_string(), serde_json::json!("Paris"));
+        named.insert("$limit".to_string(), serde_json::json!(5));
+        let body = build_query_body(&QueryRequest {
+            statement: "SELECT 1".to_string(),
+            timeout: Some("60s".to_string()),
+            scan_consistency: Some("request_plus".to_string()),
+            parameters: Some(serde_json::json!([1, "a"])),
+            named_parameters: Some(named),
+            client_context_id: Some("ctx-1".to_string()),
+        });
+        assert_eq!(body["statement"], "SELECT 1");
+        assert_eq!(body["timeout"], "60s");
+        assert_eq!(body["scan_consistency"], "request_plus");
+        assert_eq!(body["args"], serde_json::json!([1, "a"]));
+        assert_eq!(body["$city"], "Paris");
+        assert_eq!(body["$limit"], 5);
+        assert_eq!(body["client_context_id"], "ctx-1");
+    }
+
+    #[test]
+    fn query_body_omits_empty_args() {
+        let body = build_query_body(&QueryRequest {
+            statement: "SELECT 1".to_string(),
+            parameters: Some(serde_json::json!([])),
+            ..Default::default()
+        });
+        assert!(body.get("args").is_none());
+        assert!(body.get("client_context_id").is_none());
+    }
+
+    #[test]
+    fn query_request_deserializes_without_optional_fields() {
+        let r: QueryRequest = serde_json::from_str(r#"{"statement":"SELECT 1"}"#).unwrap();
+        assert!(r.named_parameters.is_none());
     }
 }

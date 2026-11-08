@@ -33,9 +33,11 @@ vi.mock("@monaco-editor/react", () => ({
 
 const executeQuery = vi.fn();
 const getExplainPlan = vi.fn();
+const cancelQuery = vi.fn();
 vi.mock("../lib/commands", () => ({
   executeQuery: (...a: unknown[]) => executeQuery(...a),
   getExplainPlan: (...a: unknown[]) => getExplainPlan(...a),
+  cancelQuery: (...a: unknown[]) => cancelQuery(...a),
   listBuckets: vi.fn(async () => []),
   getKeyspaceMetadata: vi.fn(async () => []),
   inferSchema: vi.fn(async () => []),
@@ -59,6 +61,7 @@ beforeEach(() => {
   localStorage.clear();
   executeQuery.mockReset();
   getExplainPlan.mockReset();
+  cancelQuery.mockReset();
 });
 afterEach(cleanup);
 
@@ -98,5 +101,22 @@ describe("App", () => {
     await waitFor(() => expect(screen.getByText("only_in_tab_1")).toBeTruthy());
     fireEvent.click(screen.getByTitle("New tab"));
     expect(screen.queryByText("only_in_tab_1")).toBeNull();
+  });
+
+  it("stops a running query using its client_context_id", async () => {
+    let reject!: (e: Error) => void;
+    executeQuery.mockReturnValue(new Promise((_, r) => (reject = r)));
+    cancelQuery.mockImplementation(async () => {
+      reject(new Error("Query error: [1195] Request has been stopped"));
+      return true;
+    });
+    render(<App />);
+    fireEvent.click(screen.getByText("▶ Run"));
+    fireEvent.click(await screen.findByText("■ Stop"));
+    const ctx = executeQuery.mock.calls[0][1].client_context_id;
+    expect(ctx).toBeTruthy();
+    await waitFor(() => expect(cancelQuery).toHaveBeenCalledWith(expect.anything(), ctx));
+    await waitFor(() => expect(screen.getByText(/Query cancelled/)).toBeTruthy());
+    expect(screen.getByText("▶ Run")).toBeTruthy();
   });
 });

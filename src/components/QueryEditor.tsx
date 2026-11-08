@@ -20,6 +20,9 @@ interface Props {
   /** Called with the selected text, or the whole editor content. */
   onExplain: (statement: string) => void;
   onSave: () => void;
+  /** Present while a cancellable query is running. */
+  onCancel?: () => void;
+  isCancelling?: boolean;
   isRunning: boolean;
   schemaFields: SchemaField[];
   monacoTheme?: string;
@@ -31,6 +34,8 @@ export default function QueryEditor({
   onRun,
   onExplain,
   onSave,
+  onCancel,
+  isCancelling = false,
   isRunning,
   schemaFields,
   monacoTheme = "nickel-dark",
@@ -163,6 +168,22 @@ export default function QueryEditor({
   return (
     <div className="query-editor-wrapper">
       <div className="qe-toolbar">
+        {onCancel ? (
+          <button
+            className="btn btn-danger"
+            onClick={onCancel}
+            disabled={isCancelling}
+            data-tooltip="Stop the running query"
+          >
+            {isCancelling ? (
+              <>
+                <span className="spinner" /> Stopping…
+              </>
+            ) : (
+              <>■ Stop</>
+            )}
+          </button>
+        ) : (
         <button
           className="btn btn-primary"
           onClick={run}
@@ -177,6 +198,7 @@ export default function QueryEditor({
             <>▶ Run</>
           )}
         </button>
+        )}
         <button
           className="btn"
           onClick={explain}

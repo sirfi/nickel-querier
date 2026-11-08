@@ -13,9 +13,16 @@ export interface ConnectionConfig {
 export interface QueryRequest {
   statement: string;
   timeout?: string;
-  scan_consistency?: string;
+  scan_consistency?: ScanConsistency;
+  /** Positional parameters ($1, $2, …) */
   parameters?: unknown[];
+  /** Named parameters ($name), keys with or without `$` */
+  named_parameters?: Record<string, unknown>;
+  /** Used to cancel the request */
+  client_context_id?: string;
 }
+
+export type ScanConsistency = "not_bounded" | "request_plus";
 
 export interface QueryMetrics {
   elapsed_time: string;
