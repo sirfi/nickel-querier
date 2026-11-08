@@ -4,6 +4,7 @@ import { registerN1QLLanguage } from "../lib/n1ql-language";
 import { SchemaField } from "../lib/types";
 import { formatN1QL } from "../lib/n1ql-formatter";
 import { splitStatements, statementAtOffset } from "../lib/statements";
+import { buildSchemaSuggestions, extendForBacktick } from "../lib/completions";
 import {
   loadEditorFontSize,
   saveEditorFontSize,
@@ -30,6 +31,8 @@ interface Props {
   isCancelling?: boolean;
   isRunning: boolean;
   schemaFields: SchemaField[];
+  /** Quoted keyspace paths for completion */
+  keyspaces?: string[];
   monacoTheme?: string;
   scanConsistency?: ScanConsistency;
   onScanConsistencyChange?: (value: ScanConsistency) => void;
@@ -48,6 +51,7 @@ export default function QueryEditor({
   isCancelling = false,
   isRunning,
   schemaFields,
+  keyspaces = [],
   monacoTheme = "nickel-dark",
   scanConsistency = "not_bounded",
   onScanConsistencyChange,
@@ -56,6 +60,8 @@ export default function QueryEditor({
   const editorRef = useRef<MonacoType.editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<typeof MonacoType | null>(null);
   const [fontSize, setFontSize] = useState<number>(() => loadEditorFontSize());
+  // Monaco loads asynchronously; effects that need it re-run once it is ready.
+  const [monacoReady, setMonacoReady] = useState(false);
 
   const handleBeforeMount: BeforeMount = (monaco) => {
     monacoRef.current = monaco;
@@ -170,42 +176,49 @@ export default function QueryEditor({
       () => callbacksRef.current.handleFormat()
     );
     editor.focus();
+    setMonacoReady(true);
   };
 
-  // Update schema-based completions when fields change
+  // Schema-based completions (fields of the inferred collection + keyspaces)
   useEffect(() => {
     const monaco = monacoRef.current;
-    if (!monaco || schemaFields.length === 0) return;
+    if (!monacoReady || !monaco) return;
+    const items = buildSchemaSuggestions(schemaFields, keyspaces);
+    if (items.length === 0) return;
 
     const disposable = monaco.languages.registerCompletionItemProvider("n1ql", {
+      triggerCharacters: ["`"],
       provideCompletionItems(
         model: MonacoType.editor.ITextModel,
         position: MonacoType.Position
       ): MonacoType.languages.ProviderResult<MonacoType.languages.CompletionList> {
         const word = model.getWordUntilPosition(position);
-        const range = new monaco.Range(
-          position.lineNumber,
-          word.startColumn,
-          position.lineNumber,
-          word.endColumn
+        const fieldRange = new monaco.Range(
+          position.lineNumber, word.startColumn, position.lineNumber, word.endColumn
         );
-        const fieldItems: MonacoType.languages.CompletionItem[] = schemaFields.map(
-          (f) => ({
-            label: f.name,
-            kind: monaco.languages.CompletionItemKind.Field,
-            insertText: f.name,
-            detail: f.field_type,
-            sortText: "2" + f.name,
-            documentation: `Field: ${f.name} (${f.field_type})`,
-            range,
-          })
+        const ksStart = extendForBacktick(model.getLineContent(position.lineNumber), word.startColumn);
+        const ksRange = new monaco.Range(
+          position.lineNumber, ksStart, position.lineNumber, word.endColumn
         );
-        return { suggestions: fieldItems };
+        return {
+          suggestions: items.map((s) => ({
+            label: s.label,
+            kind:
+              s.kind === "field"
+                ? monaco.languages.CompletionItemKind.Field
+                : monaco.languages.CompletionItemKind.Module,
+            insertText: s.insertText,
+            filterText: s.filterText,
+            detail: s.detail,
+            sortText: s.sortText,
+            range: s.kind === "field" ? fieldRange : ksRange,
+          })),
+        };
       },
     });
 
     return () => disposable.dispose();
-  }, [schemaFields]);
+  }, [schemaFields, keyspaces, monacoReady]);
 
   // Sync font size changes to editor instance
   useEffect(() => {

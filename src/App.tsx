@@ -10,6 +10,7 @@ import ExplainViewer from "./components/ExplainViewer";
 import ParamsPanel from "./components/ParamsPanel";
 import ResizeHandle from "./components/ResizeHandle";
 import AdviseViewer from "./components/AdviseViewer";
+import ShortcutsHelp, { isHelpShortcut } from "./components/ShortcutsHelp";
 import { adviseStatement, parseAdvice, type Advice } from "./lib/indexes";
 import { buildParams } from "./lib/params";
 import { migrateConnectionSecrets } from "./lib/secrets";
@@ -216,6 +217,21 @@ export default function App() {
   const [sideOpen, setSideOpen] = useState(true);
 
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [keyspaces, setKeyspaces] = useState<string[]>([]);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (isHelpShortcut(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        setShowShortcuts((v) => !v);
+      }
+    };
+    // Capture phase, so the editor does not swallow the shortcut
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
   const [savedQueries, setSavedQueries] = useState<SavedQuery[]>([]);
 
   useEffect(() => {
@@ -453,6 +469,14 @@ export default function App() {
           onConnectionsChange={handleConnectionsChange}
         />
         <button
+          className="btn btn-ghost"
+          onClick={() => setShowShortcuts(true)}
+          data-tooltip="Keyboard shortcuts (Ctrl+?)"
+          aria-label="Keyboard shortcuts"
+        >
+          ⌨
+        </button>
+        <button
           className="btn btn-ghost app-theme-toggle"
           onClick={handleThemeToggle}
           data-tooltip={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
@@ -495,6 +519,7 @@ export default function App() {
                     updateTabState(activeTabId, { schemaFields: fields })
                   }
                   onOpenQuery={(stmt) => handleAddTab(stmt)}
+                  onKeyspacesChange={setKeyspaces}
                 />
               )}
               {sideTab === "history" && (
@@ -568,6 +593,7 @@ export default function App() {
               onSave={handleSaveQuery}
               isRunning={activeState.isRunning || activeState.isExplaining || activeState.isAdvising}
               schemaFields={activeState.schemaFields}
+              keyspaces={keyspaces}
               monacoTheme={theme === "light" ? "nickel-light" : "nickel-dark"}
             />
           </div>
@@ -649,6 +675,7 @@ export default function App() {
           </div>
         </main>
       </div>
+      {showShortcuts && <ShortcutsHelp onClose={() => setShowShortcuts(false)} />}
     </div>
   );
 }

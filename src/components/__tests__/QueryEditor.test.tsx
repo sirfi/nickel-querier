@@ -31,7 +31,7 @@ const fakeMonaco = {
   languages: {
     getLanguages: () => [{ id: "n1ql" }],
     registerCompletionItemProvider: () => ({ dispose: () => {} }),
-    CompletionItemKind: { Field: 3 },
+    CompletionItemKind: { Field: 3, Module: 8 },
   },
 };
 

@@ -178,3 +178,13 @@ describe("App index advisor", () => {
     expect((screen.getByTestId("editor") as HTMLTextAreaElement).value).toBe("CREATE INDEX adv ON `b`(`t`);");
   });
 });
+
+describe("App shortcuts help", () => {
+  it("opens with Ctrl+? and closes with Escape", () => {
+    render(<App />);
+    fireEvent.keyDown(window, { key: "?", ctrlKey: true, shiftKey: true });
+    expect(screen.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeTruthy();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+  });
+});

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { BucketInfo, CollectionSchema, SchemaField, ConnectionConfig } from "../lib/types";
 import { listBuckets, getKeyspaceMetadata, inferSchema, executeQuery } from "../lib/commands";
 import { IndexInfo, indexListQuery, describeIndex } from "../lib/indexes";
-import { KeyspaceRef, keyspaceId, sampleQuery } from "../lib/keyspace";
+import { KeyspaceRef, keyspaceId, keyspacePath, sampleQuery } from "../lib/keyspace";
 import DocumentEditor from "./DocumentEditor";
 import "./SchemaExplorer.css";
 
@@ -12,11 +12,13 @@ interface Props {
   onFieldsChange: (fields: SchemaField[]) => void;
   /** Open a sample query for the keyspace (the parent decides where). */
   onOpenQuery: (statement: string) => void;
+  /** Known keyspaces (quoted paths), for editor completion */
+  onKeyspacesChange?: (keyspaces: string[]) => void;
 }
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-export default function SchemaExplorer({ config, onFieldsChange, onOpenQuery }: Props) {
+export default function SchemaExplorer({ config, onFieldsChange, onOpenQuery, onKeyspacesChange }: Props) {
   const [buckets, setBuckets] = useState<BucketInfo[]>([]);
   const [schemas, setSchemas] = useState<Record<string, CollectionSchema[]>>({});
   const [fields, setFields] = useState<Record<string, SchemaField[]>>({});
@@ -68,6 +70,15 @@ export default function SchemaExplorer({ config, onFieldsChange, onOpenQuery }: 
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (!onKeyspacesChange) return;
+    const paths = new Set<string>();
+    for (const b of buckets) paths.add(keyspacePath({ bucket: b.name, scope: "_default", collection: "_default" }));
+    for (const cols of Object.values(schemas)) for (const c of cols) paths.add(keyspacePath(c));
+    onKeyspacesChange([...paths]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buckets, schemas]);
 
   const toggle = (id: string) =>
     setExpanded((prev) => {
