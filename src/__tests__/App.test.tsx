@@ -258,3 +258,25 @@ describe("App plan diff", () => {
     expect(screen.getByText("−1 removed")).toBeTruthy();
   });
 });
+
+describe("App query sharing", () => {
+  it("copies a saved query link and opens it in a new tab", async () => {
+    const { encodeShareLink } = await import("../lib/share");
+    localStorage.setItem("nq_saved", JSON.stringify([
+      { id: "s1", name: "Top hotels", statement: "SELECT 'shared'", created_at: "2026-01-01T00:00:00Z", tags: [] },
+    ]));
+    const writeText = vi.fn(async () => {});
+    Object.assign(navigator, { clipboard: { writeText } });
+    render(<App />);
+    fireEvent.click(screen.getByText("✦ Saved"));
+    fireEvent.click(screen.getByRole("button", { name: "Copy share link for Top hotels" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    const link = (writeText.mock.calls[0] as unknown as [string])[0];
+    expect(link).toBe(encodeShareLink({ name: "Top hotels", statement: "SELECT 'shared'", tags: [] }));
+
+    vi.spyOn(window, "prompt").mockReturnValue(link);
+    fireEvent.click(screen.getByText("🔗 Open link"));
+    expect((screen.getByTestId("editor") as HTMLTextAreaElement).value).toBe("SELECT 'shared'");
+    expect(document.querySelector(".query-tab.active .query-tab-label")?.textContent).toBe("Top hotels");
+  });
+});

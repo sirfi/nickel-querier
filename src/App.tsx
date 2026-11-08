@@ -291,11 +291,12 @@ export default function App() {
     setActiveTabId(id);
   };
 
-  const handleAddTab = (query?: string) => {
+  const handleAddTab = (query?: string, label?: string) => {
     // New tab inherits the last active connection
     const connId = activeTab.connectionId;
     saveLastConnectionId(connId);
     const newTab = makeTab(connId, query ?? "");
+    if (label) newTab.label = label.length > 30 ? label.slice(0, 29) + "…" : label;
     setTabs((prev) => [...prev, newTab]);
     setTabStates((prev) => ({ ...prev, [newTab.id]: emptyTabState() }));
     setActiveTabId(newTab.id);
@@ -588,6 +589,7 @@ export default function App() {
                   onSelect={handleSavedSelect}
                   onRefresh={() => setSavedQueries(loadSavedQueries())}
                   pendingStatement={activeTab.query}
+                  onOpenShared={(q) => handleAddTab(q.statement, q.name)}
                 />
               )}
             </div>

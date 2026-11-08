@@ -23,6 +23,7 @@ import {
   isInFolder,
 } from "../lib/folders";
 import { saveTextFile, timestampedName } from "../lib/export";
+import { encodeShareLink, decodeShareLink, SharedQuery } from "../lib/share";
 import "./SavedQueries.css";
 
 interface Props {
@@ -30,6 +31,8 @@ interface Props {
   onSelect: (statement: string) => void;
   onRefresh: () => void;
   pendingStatement: string;
+  /** Open a query received as a share link (e.g. in a new tab) */
+  onOpenShared?: (query: SharedQuery) => void;
 }
 
 const DRAG_QUERY = "application/x-nickel-query";
@@ -38,7 +41,7 @@ const DRAG_FOLDER = "application/x-nickel-folder";
 const splitTags = (s: string) =>
   s.split(",").map((t) => t.trim()).filter(Boolean);
 
-export default function SavedQueries({ queries, onSelect, onRefresh, pendingStatement }: Props) {
+export default function SavedQueries({ queries, onSelect, onRefresh, pendingStatement, onOpenShared }: Props) {
   const [search, setSearch] = useState("");
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [folders, setFolders] = useState<string[]>(() => loadSavedFolders());
@@ -97,6 +100,29 @@ export default function SavedQueries({ queries, onSelect, onRefresh, pendingStat
       flash(`Imported ${added}${skipped ? `, skipped ${skipped} duplicate/invalid` : ""}`);
     } catch (e) {
       flash(`Import failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  // ---------- Sharing ----------
+  const handleCopyLink = async (q: SavedQuery) => {
+    const link = encodeShareLink({ name: q.name, statement: q.statement, tags: q.tags });
+    try {
+      await navigator.clipboard.writeText(link);
+      flash(`Link for "${q.name}" copied`);
+    } catch {
+      window.prompt("Copy this link:", link);
+    }
+  };
+
+  const handleOpenLink = () => {
+    const input = window.prompt("Paste a nickelquerier:// link:");
+    if (!input) return;
+    try {
+      const shared = decodeShareLink(input);
+      onOpenShared?.(shared);
+      flash(`Opened "${shared.name}" in a new tab — use + Save to keep it`);
+    } catch (e) {
+      flash(e instanceof Error ? e.message : String(e));
     }
   };
 
@@ -272,6 +298,14 @@ export default function SavedQueries({ queries, onSelect, onRefresh, pendingStat
           <div className="sq-meta">
             <span>{new Date(q.created_at).toLocaleDateString()}</span>
             <div className="sq-actions">
+              <button
+                className="btn btn-ghost sq-btn"
+                onClick={() => handleCopyLink(q)}
+                aria-label={`Copy share link for ${q.name}`}
+                data-tooltip="Copy share link"
+              >
+                🔗
+              </button>
               <button className="btn btn-ghost sq-btn" onClick={() => handleStartEdit(q)} aria-label={`Edit ${q.name}`}>
                 ✎
               </button>
@@ -384,6 +418,11 @@ export default function SavedQueries({ queries, onSelect, onRefresh, pendingStat
       </div>
       <div className="sq-io">
         <button className="btn btn-ghost sq-btn" onClick={() => handleNewFolder()}>＋ Folder</button>
+        {onOpenShared && (
+          <button className="btn btn-ghost sq-btn" onClick={handleOpenLink} data-tooltip="Open a shared query link">
+            🔗 Open link
+          </button>
+        )}
         <button className="btn btn-ghost sq-btn" onClick={handleExport} disabled={queries.length === 0}>
           ↓ Export
         </button>
