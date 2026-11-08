@@ -270,3 +270,12 @@
 .rv-json-punct   { color: var(--text-secondary); }
 .rv-json-expand  { cursor: pointer; user-select: none; color: var(--text-muted); }
 .rv-json-collapsed { color: var(--text-muted); }
+
+.rv-notice {
+  font-size: 11px;
+  color: var(--text-secondary);
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -621,6 +621,49 @@ async fn infer_schema(
     Ok(parse_infer_fields(&result.results))
 }
 
+/// Make a file name safe for the save dialog (no path separators / control chars).
+fn sanitize_file_name(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| if c.is_control() || "/\\:*?\"<>|".contains(c) { '_' } else { c })
+        .collect();
+    let trimmed = cleaned.trim().trim_matches('.').to_string();
+    if trimmed.is_empty() { "export".to_string() } else { trimmed }
+}
+
+/// Ask the user where to save `contents` and write it. Returns the chosen
+/// path, or `None` if the dialog was cancelled.
+#[tauri::command]
+async fn export_file(
+    app: tauri::AppHandle,
+    default_name: String,
+    contents: String,
+    filter_name: String,
+    extensions: Vec<String>,
+) -> Result<Option<String>, AppError> {
+    use tauri_plugin_dialog::DialogExt;
+    let name = sanitize_file_name(&default_name);
+    let path = tokio::task::spawn_blocking(move || {
+        let exts: Vec<&str> = extensions.iter().map(String::as_str).collect();
+        app.dialog()
+            .file()
+            .set_file_name(&name)
+            .add_filter(&filter_name, &exts)
+            .blocking_save_file()
+    })
+    .await
+    .map_err(|e| AppError::Connection(e.to_string()))?;
+
+    let Some(path) = path else { return Ok(None) };
+    let path = path
+        .into_path()
+        .map_err(|e| AppError::Connection(format!("Invalid path: {}", e)))?;
+    tokio::fs::write(&path, contents)
+        .await
+        .map_err(|e| AppError::Connection(format!("Could not write {}: {}", path.display(), e)))?;
+    Ok(Some(path.display().to_string()))
+}
+
 /// Cancel a running request started with the given `client_context_id`.
 #[tauri::command]
 async fn cancel_query(
@@ -655,6 +698,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             execute_query,
             get_explain_plan,
@@ -665,6 +709,7 @@ pub fn run() {
             cancel_query,
             set_connection_secret,
             delete_connection_secret,
+            export_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -1059,5 +1104,12 @@ mod tests {
         .unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("check host, port and TLS settings"), "{}", msg);
+    }
+
+    #[test]
+    fn sanitize_file_name_strips_separators() {
+        assert_eq!(sanitize_file_name("../a/b:c.csv"), "_a_b_c.csv");
+        assert_eq!(sanitize_file_name("  "), "export");
+        assert_eq!(sanitize_file_name("results.json"), "results.json");
     }
 }

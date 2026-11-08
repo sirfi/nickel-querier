@@ -12,6 +12,7 @@ import {
   toTsv,
   truncate,
 } from "../lib/result-utils";
+import { saveTextFile, timestampedName } from "../lib/export";
 import "react-json-view-lite/dist/index.css";
 import "./ResultViewer.css";
 
@@ -25,20 +26,6 @@ interface Props {
 
 const PAGE_SIZE = 100;
 const EMPTY_ROWS: Row[] = [];
-
-// ---------- Export helpers ----------
-
-function triggerDownload(content: string, type: string, filename: string): void {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
 
 async function copyText(text: string): Promise<boolean> {
   try {
@@ -56,6 +43,7 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
   const [sortDir, setSortDir] = useState<SortDirection>("asc");
   const [filterText, setFilterText] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   // All hooks must run on every render — keep them above the early returns.
   const allRows = useMemo(() => (result ? toRows(result.results) : EMPTY_ROWS), [result]);
@@ -117,6 +105,36 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
   };
 
   const rawResults = result.results;
+
+  const flash = (msg: string) => {
+    setNotice(msg);
+    setTimeout(() => setNotice(null), 4000);
+  };
+
+  const handleExport = async (kind: "json" | "csv") => {
+    try {
+      const path = await saveTextFile(
+        kind === "json"
+          ? {
+              fileName: timestampedName("results", "json"),
+              contents: JSON.stringify(rawResults, null, 2),
+              mime: "application/json",
+              filterName: "JSON",
+              extensions: ["json"],
+            }
+          : {
+              fileName: timestampedName("results", "csv"),
+              contents: toCsv(processedRows, columns),
+              mime: "text/csv",
+              filterName: "CSV",
+              extensions: ["csv"],
+            }
+      );
+      if (path) flash(`Saved ${path}`);
+    } catch (e) {
+      flash(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
   const handleCopy = async (kind: "json" | "tsv") => {
     const text =
       kind === "json" ? JSON.stringify(rawResults, null, 2) : toTsv(processedRows, columns);
@@ -163,16 +181,17 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
 
   const renderExportMenu = () => (
     <div className="rv-export">
+      {notice && <span className="rv-notice" title={notice}>{notice}</span>}
       <button
         className="btn btn-ghost rv-export-btn"
-        onClick={() => triggerDownload(JSON.stringify(rawResults, null, 2), "application/json", "results.json")}
+        onClick={() => handleExport("json")}
         data-tooltip="Download as JSON"
       >
         ↓ JSON
       </button>
       <button
         className="btn btn-ghost rv-export-btn"
-        onClick={() => triggerDownload(toCsv(processedRows, columns), "text/csv", "results.csv")}
+        onClick={() => handleExport("csv")}
         data-tooltip="Download as CSV"
         disabled={columns.length === 0}
       >
