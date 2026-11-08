@@ -14,6 +14,9 @@ const EDITOR_FONT_SIZE_KEY = "nq_editor_font_size";
 const TABS_KEY = "nq_tabs";
 const LAYOUT_KEY = "nq_layout";
 const SAVED_FOLDERS_KEY = "nq_saved_folders";
+const CLIPS_KEY = "nq_clips";
+export const MAX_CLIPS = 30;
+const MAX_CLIP_LENGTH = 20_000;
 const MAX_HISTORY = 200;
 
 const EDITOR_FONT_SIZE_MIN = 10;
@@ -316,6 +319,36 @@ export function saveTabs(tabs: QueryTab[], activeTabId: string): void {
     })),
     activeTabId,
   });
+}
+
+// ---------- Clipboard history (fragments copied in the editor) ----------
+
+export interface Clip {
+  text: string;
+  at: string; // ISO
+}
+
+export function loadClips(): Clip[] {
+  const clips = load<Clip[]>(CLIPS_KEY);
+  return Array.isArray(clips) ? clips.filter((c) => typeof c?.text === "string") : [];
+}
+
+/** Add a fragment to the top (an identical earlier entry moves up). Returns the new list. */
+export function addClip(text: string, now = new Date()): Clip[] {
+  if (!text.trim() || text.length > MAX_CLIP_LENGTH) return loadClips();
+  const clips = [{ text, at: now.toISOString() }, ...loadClips().filter((c) => c.text !== text)].slice(0, MAX_CLIPS);
+  save(CLIPS_KEY, clips);
+  return clips;
+}
+
+export function removeClip(text: string): Clip[] {
+  const clips = loadClips().filter((c) => c.text !== text);
+  save(CLIPS_KEY, clips);
+  return clips;
+}
+
+export function clearClips(): void {
+  save(CLIPS_KEY, []);
 }
 
 // ---------- Layout ----------

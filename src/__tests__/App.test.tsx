@@ -18,7 +18,7 @@ vi.mock("@monaco-editor/react", () => ({
           updateOptions: () => {},
           focus: () => {},
         },
-        { KeyMod: { CtrlCmd: 0, Shift: 0 }, KeyCode: { Enter: 0, KeyE: 0, KeyS: 0, KeyF: 0, KeyA: 0 } }
+        { KeyMod: { CtrlCmd: 0, Shift: 0 }, KeyCode: { Enter: 0, KeyE: 0, KeyS: 0, KeyF: 0, KeyA: 0, KeyV: 0 } }
       );
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);

@@ -17,6 +17,7 @@
 
 .sq-search {
   flex: 1;
+  min-width: 0;
   font-size: 12px;
 }
 
@@ -127,6 +128,7 @@
 
 .sq-io {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
   padding: 2px 8px 6px;
@@ -182,3 +184,5 @@
 .sq-rename { flex: 1; font-size: 12px; padding: 2px 6px; }
 .sq-folder-label { font-size: 11px; color: var(--text-muted); margin-bottom: 3px; }
 .sq-item[draggable="true"] { cursor: grab; }
+.sq-header .btn-primary { flex-shrink: 0; }
+.sq-io .sq-notice { flex-basis: 100%; white-space: normal; }

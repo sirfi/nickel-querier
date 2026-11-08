@@ -471,3 +471,30 @@ describe("saved query folders", () => {
     expect(s.loadSavedQueries()[0].folder).toBe("Team/Ops");
   });
 });
+
+describe("clipboard history", () => {
+  it("keeps the newest unique fragments first, capped", async () => {
+    const s = await import("./storage");
+    localStorage.clear();
+    s.addClip("a");
+    s.addClip("b");
+    s.addClip("a"); // moves to top
+    expect(s.loadClips().map((c) => c.text)).toEqual(["a", "b"]);
+    for (let i = 0; i < 40; i++) s.addClip(`x${i}`);
+    expect(s.loadClips()).toHaveLength(s.MAX_CLIPS);
+    expect(s.loadClips()[0].text).toBe("x39");
+  });
+
+  it("ignores blank / huge fragments and supports removal", async () => {
+    const s = await import("./storage");
+    localStorage.clear();
+    s.addClip("   ");
+    s.addClip("y".repeat(20_001));
+    expect(s.loadClips()).toEqual([]);
+    s.addClip("keep");
+    s.addClip("drop");
+    expect(s.removeClip("drop").map((c) => c.text)).toEqual(["keep"]);
+    s.clearClips();
+    expect(s.loadClips()).toEqual([]);
+  });
+});
