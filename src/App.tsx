@@ -13,7 +13,7 @@ import AdviseViewer from "./components/AdviseViewer";
 import ShortcutsHelp, { isHelpShortcut } from "./components/ShortcutsHelp";
 import { adviseStatement, parseAdvice, type Advice } from "./lib/indexes";
 import { buildParams } from "./lib/params";
-import { migrateConnectionSecrets } from "./lib/secrets";
+import { migrateConnectionSecrets, applyMigratedSecrets } from "./lib/secrets";
 
 import { executeQuery, getExplainPlan, cancelQuery } from "./lib/commands";
 import {
@@ -59,6 +59,7 @@ SELECT "Hello from Nickel Querier!" AS greeting,
 `;
 
 let tabCounter = 1;
+const EMPTY_KEYSPACES: string[] = [];
 
 function makeTab(connectionId: string, query = DEFAULT_QUERY): QueryTab {
   return {
@@ -77,6 +78,7 @@ interface TabState {
   /** client_context_id of the running query (for cancellation) */
   runningContextId: string | null;
   cancelRequested: boolean;
+  cancelError: string | null;
   explainPlan: unknown;
   explainError: string | null;
   isExplaining: boolean;
@@ -94,6 +96,7 @@ function emptyTabState(): TabState {
     isRunning: false,
     runningContextId: null,
     cancelRequested: false,
+    cancelError: null,
     explainPlan: null,
     explainError: null,
     isExplaining: false,
@@ -150,12 +153,18 @@ export default function App() {
   );
 
   // Move plain-text passwords from older versions into the OS keychain.
+  // The result is applied to the connections as stored *now*, so additions or
+  // edits made while migration was running are never overwritten.
+  const [secretWarnings, setSecretWarnings] = useState<string[]>([]);
   useEffect(() => {
     let cancelled = false;
-    migrateConnectionSecrets(loadConnections()).then(({ connections: migrated, changed }) => {
-      if (cancelled || !changed) return;
-      saveConnections(migrated);
-      setConnections(migrated);
+    migrateConnectionSecrets(loadConnections()).then(({ migrated, warnings }) => {
+      if (cancelled) return;
+      if (warnings.length > 0) setSecretWarnings(warnings);
+      if (Object.keys(migrated).length === 0) return;
+      const updated = applyMigratedSecrets(loadConnections(), migrated);
+      saveConnections(updated);
+      setConnections(updated);
     });
     return () => {
       cancelled = true;
@@ -217,7 +226,9 @@ export default function App() {
   const [sideOpen, setSideOpen] = useState(true);
 
   const [history, setHistory] = useState<HistoryEntry[]>([]);
-  const [keyspaces, setKeyspaces] = useState<string[]>([]);
+  // Keyspace completions per connection id, so another cluster's names are
+  // never offered (the schema panel is not mounted on every connection switch).
+  const [keyspacesByConn, setKeyspacesByConn] = useState<Record<string, string[]>>({});
   const [showShortcuts, setShowShortcuts] = useState(false);
 
   useEffect(() => {
@@ -243,10 +254,12 @@ export default function App() {
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
   const activeState = tabStates[activeTabId] ?? emptyTabState();
 
+  // The connection queries actually use (falls back if the tab's one was deleted)
+  const resolvedConnection: SavedConnection | undefined =
+    connections.find((c) => c.id === activeTab.connectionId) ?? connections[0];
   const activeConnection: ConnectionConfig = (() => {
-    const conn = connections.find((c) => c.id === activeTab.connectionId);
-    if (conn) return conn;
-    return connections[0] ?? {
+    if (resolvedConnection) return resolvedConnection;
+    return {
       host: "localhost",
       port: 8093,
       username: "Administrator",
@@ -307,6 +320,11 @@ export default function App() {
   };
 
   // ---------- Query execution ----------
+  // Context ids the user asked to cancel (read inside handleRun's catch).
+  const cancelledRef = useRef<Set<string>>(new Set());
+  // Connection each running request was sent to, by client_context_id.
+  const runningConnectionsRef = useRef<Map<string, ConnectionConfig>>(new Map());
+
   const handleRun = useCallback(async (statement: string) => {
     const stmt = statement.trim();
     if (!stmt) return;
@@ -319,10 +337,13 @@ export default function App() {
     }
 
     const historyConnection = {
-      connectionId: activeTab.connectionId,
-      connectionName: connections.find((c) => c.id === activeTab.connectionId)?.name,
+      connectionId: resolvedConnection?.id,
+      connectionName: resolvedConnection?.name,
     };
     const contextId = crypto.randomUUID();
+    // Cancellation must go to the cluster the query runs on, even if the
+    // tab's connection is switched while it runs.
+    runningConnectionsRef.current.set(contextId, activeConnection);
     updateTabState(tabId, {
       isRunning: true,
       runningContextId: contextId,
@@ -342,7 +363,8 @@ export default function App() {
         named_parameters: params.named_parameters,
         client_context_id: contextId,
       });
-      updateTabState(tabId, { result: res, isRunning: false, runningContextId: null });
+      runningConnectionsRef.current.delete(contextId);
+      updateTabState(tabId, { result: res, isRunning: false, runningContextId: null, cancelError: null });
       const entry: HistoryEntry = {
         id: crypto.randomUUID(),
         statement: stmt,
@@ -357,7 +379,8 @@ export default function App() {
     } catch (e: unknown) {
       const raw = e instanceof Error ? e.message : String(e);
       const msg = cancelledRef.current.delete(contextId) ? `Query cancelled.\n\n${raw}` : raw;
-      updateTabState(tabId, { queryError: msg, isRunning: false, runningContextId: null });
+      runningConnectionsRef.current.delete(contextId);
+      updateTabState(tabId, { queryError: msg, isRunning: false, runningContextId: null, cancelError: null });
       const entry: HistoryEntry = {
         id: crypto.randomUUID(),
         statement: stmt,
@@ -372,23 +395,32 @@ export default function App() {
       setHistory(loadHistory());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeConnection, activeTabId, activeTab.paramValues, activeTab.scanConsistency, activeTab.connectionId, connections]);
-
-  // Context ids the user asked to cancel (read inside handleRun's catch).
-  const cancelledRef = useRef<Set<string>>(new Set());
+  }, [activeConnection, activeTabId, activeTab.paramValues, activeTab.scanConsistency, resolvedConnection]);
 
   const handleCancel = useCallback(async () => {
     const contextId = activeState.runningContextId;
-    if (!contextId) return;
+    const connection = contextId ? runningConnectionsRef.current.get(contextId) : undefined;
+    if (!contextId || !connection) return;
+    const tabId = activeTabId;
     cancelledRef.current.add(contextId);
-    updateTabState(activeTabId, { cancelRequested: true });
+    updateTabState(tabId, { cancelRequested: true, cancelError: null });
+    let failure: string | null = null;
     try {
-      await cancelQuery(activeConnection, contextId);
+      const stopped = await cancelQuery(connection, contextId);
+      if (!stopped) failure = "The server did not find the request to stop (it may be finishing).";
     } catch (e: unknown) {
-      // The query may already have finished; surface nothing but keep running state honest.
-      console.warn("cancel failed", e);
+      failure = `Could not stop the query: ${e instanceof Error ? e.message : String(e)}`;
     }
-  }, [activeConnection, activeTabId, activeState.runningContextId]);
+    if (failure) {
+      // Allow retrying; a later error of this query is not a cancellation.
+      cancelledRef.current.delete(contextId);
+      setTabStates((prev) => {
+        const st = prev[tabId];
+        if (!st || st.runningContextId !== contextId) return prev; // already finished
+        return { ...prev, [tabId]: { ...st, cancelRequested: false, cancelError: failure } };
+      });
+    }
+  }, [activeTabId, activeState.runningContextId]);
 
   const handleExplain = useCallback(async (statement: string) => {
     const stmt = statement.trim();
@@ -492,6 +524,17 @@ export default function App() {
         </button>
       </header>
 
+      {secretWarnings.length > 0 && (
+        <div className="app-banner" role="alert">
+          <span>
+            ⚠ Some saved passwords could not be moved to the OS keychain and are still stored
+            unencrypted: {secretWarnings.join(" · ")}
+          </span>
+          <button className="btn btn-ghost" onClick={() => setSecretWarnings([])} aria-label="Dismiss">
+            ✕
+          </button>
+        </div>
+      )}
       <div className="app-body">
         {/* Side panel */}
         {sideOpen && (
@@ -519,7 +562,10 @@ export default function App() {
                     updateTabState(activeTabId, { schemaFields: fields })
                   }
                   onOpenQuery={(stmt) => handleAddTab(stmt)}
-                  onKeyspacesChange={setKeyspaces}
+                  onKeyspacesChange={(ks) => {
+                    const connId = resolvedConnection?.id;
+                    if (connId) setKeyspacesByConn((prev) => ({ ...prev, [connId]: ks }));
+                  }}
                 />
               )}
               {sideTab === "history" && (
@@ -593,7 +639,7 @@ export default function App() {
               onSave={handleSaveQuery}
               isRunning={activeState.isRunning || activeState.isExplaining || activeState.isAdvising}
               schemaFields={activeState.schemaFields}
-              keyspaces={keyspaces}
+              keyspaces={(resolvedConnection && keyspacesByConn[resolvedConnection.id]) || EMPTY_KEYSPACES}
               monacoTheme={theme === "light" ? "nickel-light" : "nickel-dark"}
             />
           </div>
@@ -653,6 +699,7 @@ export default function App() {
                   result={activeState.result}
                   error={activeState.queryError}
                   isLoading={activeState.isRunning}
+                  loadingNote={activeState.cancelError}
                 />
               )}
               {activeState.resultTab === "explain" && (

@@ -74,3 +74,14 @@ describe("ResultViewer row detail", () => {
     expect(screen.queryByLabelText("Row detail")).toBeNull();
   });
 });
+
+describe("ResultViewer row detail — keyboard", () => {
+  it("has a focusable button per row that opens the detail", () => {
+    render(<ResultViewer result={makeResult([{ a: 1 }])} error={null} isLoading={false} />);
+    const btn = screen.getByRole("button", { name: "Show row 1" });
+    fireEvent.click(btn);
+    expect(screen.getByLabelText("Row detail")).toBeTruthy();
+    fireEvent.click(btn);
+    expect(screen.queryByLabelText("Row detail")).toBeNull();
+  });
+});

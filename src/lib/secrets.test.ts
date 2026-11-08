@@ -5,6 +5,8 @@ const calls: unknown[][] = [];
 let fail: string | null = null;
 vi.mock("./commands", () => ({
   setConnectionSecret: async (...a: unknown[]) => {
+    // The first write is slow: without serialisation "second" would land first
+    if (a[1] === "first") await new Promise((r) => setTimeout(r, 20));
     calls.push(a);
     if (fail) throw new Error(fail);
   },
@@ -49,15 +51,46 @@ describe("migrateConnectionSecrets", () => {
       { ...conn, id: "c2", password: "", keychain: true },
       { ...conn, id: "c3", password: "" },
     ]);
-    expect(r.changed).toBe(true);
+    expect(r.migrated).toEqual({ c1: "pw" });
     expect(calls).toHaveLength(1);
-    expect(r.connections[0]).toMatchObject({ password: "", keychain: true });
   });
 
   it("reports no change when the keychain is unavailable", async () => {
     fail = "x";
     const r = await migrateConnectionSecrets([conn]);
-    expect(r.changed).toBe(false);
-    expect(r.connections[0].password).toBe("pw");
+    expect(r.migrated).toEqual({});
+  });
+});
+
+describe("review fixes (PR #12)", () => {
+  it("returns warnings when migration cannot use the keychain", async () => {
+    fail = "no secret service";
+    const r = await migrateConnectionSecrets([conn]);
+    expect(r.warnings).toEqual([expect.stringContaining("no secret service")]);
+  });
+
+  it("applies migration results only to records that did not change meanwhile", async () => {
+    const { applyMigratedSecrets } = await import("./secrets");
+    const current = [
+      { ...conn, id: "a", password: "old" },                       // unchanged → migrate
+      { ...conn, id: "b", password: "edited-during-migration" },   // edited → keep as is
+      { ...conn, id: "d", password: "new conn" },                   // added → keep
+    ];
+    const migratedIds = { a: "old", b: "old-b" };
+    expect(applyMigratedSecrets(current, migratedIds)).toEqual([
+      { ...conn, id: "a", password: "", keychain: true },
+      current[1],
+      current[2],
+    ]);
+  });
+
+  it("serialises keychain writes in call order", async () => {
+    const order: string[] = [];
+    fail = null;
+    const p1 = secureConnection({ ...conn, password: "first" }).then(() => order.push("first"));
+    const p2 = secureConnection({ ...conn, password: "second" }).then(() => order.push("second"));
+    await Promise.all([p1, p2]);
+    expect(calls.map((c) => c[1])).toEqual(["first", "second"]);
+    expect(order).toEqual(["first", "second"]);
   });
 });

@@ -211,3 +211,16 @@ body.is-resizing-col, body.is-resizing-col * { cursor: col-resize !important; us
   flex: 1;
   overflow: hidden;
 }
+
+/* ---- Banner (e.g. keychain migration warnings) ---- */
+.app-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--warning);
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--warning);
+}
+.app-banner span { flex: 1; }

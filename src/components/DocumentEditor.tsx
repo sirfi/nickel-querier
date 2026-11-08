@@ -53,6 +53,10 @@ export default function DocumentEditor({ config, keyspace, initialKey = "", onCl
       }
       setLoadedKey(k);
     } catch (e) {
+      // Never leave the previous document editable under a different key
+      setLoadedKey(null);
+      setText("");
+      setSavedText("");
       setStatus({ kind: "error", text: errMsg(e) });
     } finally {
       setBusy(false);
