@@ -3,6 +3,7 @@ import { BucketInfo, CollectionSchema, SchemaField, ConnectionConfig } from "../
 import { listBuckets, getKeyspaceMetadata, inferSchema, executeQuery } from "../lib/commands";
 import { IndexInfo, indexListQuery, describeIndex } from "../lib/indexes";
 import { KeyspaceRef, keyspaceId, sampleQuery } from "../lib/keyspace";
+import DocumentEditor from "./DocumentEditor";
 import "./SchemaExplorer.css";
 
 interface Props {
@@ -26,6 +27,7 @@ export default function SchemaExplorer({ config, onFieldsChange, onOpenQuery }: 
   const [itemErrors, setItemErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("");
+  const [editing, setEditing] = useState<KeyspaceRef | null>(null);
 
   // Identity of the connection: any change invalidates the cached tree.
   const connKey = `${config.tls}|${config.host}|${config.port}|${config.username}|${config.password}`;
@@ -212,6 +214,16 @@ export default function SchemaExplorer({ config, onFieldsChange, onOpenQuery }: 
                           >
                             ▶
                           </button>
+                          <button
+                            className="se-action"
+                            title="Open a document by key…"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditing(ks);
+                            }}
+                          >
+                            ✎
+                          </button>
                           {fs && (
                             <button
                               className="se-action"
@@ -248,6 +260,9 @@ export default function SchemaExplorer({ config, onFieldsChange, onOpenQuery }: 
           );
         })}
       </ul>
+      {editing && (
+        <DocumentEditor config={config} keyspace={editing} onClose={() => setEditing(null)} />
+      )}
     </div>
   );
 }

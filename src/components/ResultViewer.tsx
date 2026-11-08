@@ -11,6 +11,7 @@ import {
   toCsv,
   toTsv,
   truncate,
+  RAW_VALUE_COLUMN,
 } from "../lib/result-utils";
 import { saveTextFile, timestampedName } from "../lib/export";
 import "react-json-view-lite/dist/index.css";
@@ -44,6 +45,7 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
   const [filterText, setFilterText] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [selectedRow, setSelectedRow] = useState<Row | null>(null);
 
   // All hooks must run on every render — keep them above the early returns.
   const allRows = useMemo(() => (result ? toRows(result.results) : EMPTY_ROWS), [result]);
@@ -60,6 +62,7 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
     setFilterText("");
     setSortColumn(null);
     setSortDir("asc");
+    setSelectedRow(null);
   }, [result]);
 
   if (isLoading) {
@@ -255,7 +258,12 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
           </thead>
           <tbody>
             {pageRows.map((row, i) => (
-              <tr key={i} className="rv-tr">
+              <tr
+                key={i}
+                className={`rv-tr${row === selectedRow ? " rv-tr-selected" : ""}`}
+                onClick={() => setSelectedRow(row === selectedRow ? null : row)}
+                title="Click to show the full row"
+              >
                 <td className="rv-td rv-td-row">{page * PAGE_SIZE + i + 1}</td>
                 {columns.map((col) => (
                   <td key={col} className="rv-td">
@@ -344,9 +352,14 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
         </div>
       </div>
       <div className="rv-body">
-        {viewMode === "table" && renderTable()}
-        {viewMode === "json" && renderJson()}
-        {viewMode === "tree" && renderTree()}
+        <div className="rv-main">
+          {viewMode === "table" && renderTable()}
+          {viewMode === "json" && renderJson()}
+          {viewMode === "tree" && renderTree()}
+        </div>
+        {viewMode === "table" && selectedRow && (
+          <RowDetail row={selectedRow} onClose={() => setSelectedRow(null)} />
+        )}
       </div>
     </div>
   );
@@ -367,4 +380,40 @@ function CellValue({ value }: { value: unknown }) {
       </span>
     );
   return <span>{String(value)}</span>;
+}
+
+function RowDetail({ row, onClose }: { row: Row; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const value = Object.keys(row).length === 1 && RAW_VALUE_COLUMN in row ? row[RAW_VALUE_COLUMN] : row;
+  const text = JSON.stringify(value, null, 2);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <aside className="rv-detail" aria-label="Row detail">
+      <div className="rv-detail-head">
+        <span>Row</span>
+        <span style={{ flex: 1 }} />
+        <button
+          className="btn btn-ghost"
+          onClick={async () => {
+            if (await copyText(text)) {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            }
+          }}
+        >
+          {copied ? "✓ Copied" : "⧉ Copy"}
+        </button>
+        <button className="btn btn-ghost" onClick={onClose} aria-label="Close row detail">
+          ✕
+        </button>
+      </div>
+      <pre className="rv-detail-body">{text}</pre>
+    </aside>
+  );
 }

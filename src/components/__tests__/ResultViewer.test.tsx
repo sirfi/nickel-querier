@@ -61,3 +61,16 @@ describe("ResultViewer", () => {
     expect(screen.getByText('{"x":1}')).toBeTruthy();
   });
 });
+
+describe("ResultViewer row detail", () => {
+  it("opens the full row when a row is clicked and closes with Escape", () => {
+    render(
+      <ResultViewer result={makeResult([{ a: 1, nested: { deep: "value" } }])} error={null} isLoading={false} />
+    );
+    fireEvent.click(screen.getByText(/"deep"/));
+    const detail = screen.getByLabelText("Row detail");
+    expect(detail.textContent).toContain('"deep": "value"');
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByLabelText("Row detail")).toBeNull();
+  });
+});
