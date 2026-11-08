@@ -120,3 +120,16 @@ describe("App", () => {
     expect(screen.getByText("▶ Run")).toBeTruthy();
   });
 });
+
+describe("App tab persistence", () => {
+  it("restores tabs and their queries after a restart", async () => {
+    const { unmount } = render(<App />);
+    fireEvent.click(screen.getByTitle("New tab"));
+    fireEvent.change(screen.getByTestId("editor"), { target: { value: "SELECT 'kept'" } });
+    window.dispatchEvent(new Event("beforeunload"));
+    unmount();
+    render(<App />);
+    expect(screen.getAllByText(/^Query \d+$/)).toHaveLength(2);
+    expect((screen.getByTestId("editor") as HTMLTextAreaElement).value).toBe("SELECT 'kept'");
+  });
+});

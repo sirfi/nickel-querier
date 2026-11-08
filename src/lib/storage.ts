@@ -1,7 +1,7 @@
 // ============================================================
 // Nickel Querier — Persistence (localStorage fallback for dev)
 // ============================================================
-import { HistoryEntry, SavedQuery, SavedConnection } from "./types";
+import { HistoryEntry, SavedQuery, SavedConnection, QueryTab } from "./types";
 
 const HISTORY_KEY = "nq_history";
 const SAVED_KEY = "nq_saved";
@@ -10,6 +10,7 @@ const CONNECTIONS_KEY = "nq_connections";
 const LAST_CONN_ID_KEY = "nq_last_conn_id";
 const THEME_KEY = "nq_theme";
 const EDITOR_FONT_SIZE_KEY = "nq_editor_font_size";
+const TABS_KEY = "nq_tabs";
 const MAX_HISTORY = 200;
 
 const EDITOR_FONT_SIZE_MIN = 10;
@@ -162,6 +163,39 @@ export function loadLastConnectionId(): string | null {
 
 export function saveLastConnectionId(id: string): void {
   save(LAST_CONN_ID_KEY, id);
+}
+
+// ---------- Open Tabs ----------
+
+export interface StoredTabs {
+  tabs: QueryTab[];
+  activeTabId: string;
+}
+
+function isQueryTab(t: unknown): t is QueryTab {
+  if (!t || typeof t !== "object") return false;
+  const o = t as Record<string, unknown>;
+  return typeof o.id === "string" && typeof o.label === "string" &&
+    typeof o.query === "string" && typeof o.connectionId === "string";
+}
+
+/** Restore open tabs. Returns null when nothing (valid) was stored. */
+export function loadTabs(): StoredTabs | null {
+  const stored = load<StoredTabs>(TABS_KEY);
+  if (!stored || !Array.isArray(stored.tabs)) return null;
+  const tabs = stored.tabs.filter(isQueryTab);
+  if (tabs.length === 0) return null;
+  const activeTabId = tabs.some((t) => t.id === stored.activeTabId)
+    ? stored.activeTabId
+    : tabs[0].id;
+  return { tabs, activeTabId };
+}
+
+export function saveTabs(tabs: QueryTab[], activeTabId: string): void {
+  save<StoredTabs>(TABS_KEY, {
+    tabs: tabs.map(({ id, label, query, connectionId }) => ({ id, label, query, connectionId })),
+    activeTabId,
+  });
 }
 
 // ---------- Theme ----------

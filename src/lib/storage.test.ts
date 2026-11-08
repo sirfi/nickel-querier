@@ -347,3 +347,25 @@ describe("loadEditorFontSize / saveEditorFontSize", () => {
     expect(loadEditorFontSize()).toBe(EDITOR_FONT_SIZE_MAX);
   });
 });
+
+describe("tabs persistence", () => {
+  it("round-trips tabs and the active tab", async () => {
+    const { saveTabs, loadTabs } = await import("./storage");
+    const tabs = [
+      { id: "a", label: "Query 1", query: "SELECT 1", connectionId: "default" },
+      { id: "b", label: "Query 2", query: "SELECT 2", connectionId: "default" },
+    ];
+    saveTabs(tabs, "b");
+    expect(loadTabs()).toEqual({ tabs, activeTabId: "b" });
+  });
+
+  it("ignores malformed data and falls back to the first tab", async () => {
+    const { loadTabs } = await import("./storage");
+    localStorage.setItem("nq_tabs", JSON.stringify({ tabs: [{ id: 1 }], activeTabId: "x" }));
+    expect(loadTabs()).toBeNull();
+    localStorage.setItem("nq_tabs", JSON.stringify({
+      tabs: [{ id: "a", label: "L", query: "", connectionId: "c" }], activeTabId: "gone",
+    }));
+    expect(loadTabs()?.activeTabId).toBe("a");
+  });
+});

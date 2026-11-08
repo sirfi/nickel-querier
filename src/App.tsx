@@ -18,6 +18,8 @@ import {
   loadLastConnectionId,
   loadTheme,
   saveTheme,
+  loadTabs,
+  saveTabs,
   type AppTheme,
 } from "./lib/storage";
 
@@ -91,6 +93,22 @@ function getInitialConnectionId(): string {
   return conns[0]?.id ?? "default";
 }
 
+function restoreTabs(connections: SavedConnection[]): { tabs: QueryTab[]; activeTabId: string } {
+  const stored = loadTabs();
+  if (stored) {
+    const fallback = getInitialConnectionId();
+    const tabs = stored.tabs.map((t) =>
+      connections.some((c) => c.id === t.connectionId) ? t : { ...t, connectionId: fallback }
+    );
+    // Continue numbering after the highest "Query N" label.
+    const maxN = Math.max(0, ...tabs.map((t) => Number(/^Query (\d+)$/.exec(t.label)?.[1] ?? 0)));
+    tabCounter = Math.max(tabCounter, maxN + 1);
+    return { tabs, activeTabId: stored.activeTabId };
+  }
+  const first = makeTab(getInitialConnectionId());
+  return { tabs: [first], activeTabId: first.id };
+}
+
 export default function App() {
   // ---------- Theme ----------
   const [theme, setTheme] = useState<AppTheme>(() => loadTheme());
@@ -113,15 +131,31 @@ export default function App() {
   );
 
   // ---------- Tabs ----------
-  // Compute the initial tab once so all three state initialisers share the same id.
-  const [initialTab] = useState<QueryTab>(() => makeTab(getInitialConnectionId()));
-  const [tabs, setTabs] = useState<QueryTab[]>(() => [initialTab]);
-  const [activeTabId, setActiveTabId] = useState<string>(() => initialTab.id);
+  // Restore the previous session's tabs (or create a first tab) exactly once.
+  const [initial] = useState(() => restoreTabs(loadConnections()));
+  const [tabs, setTabs] = useState<QueryTab[]>(() => initial.tabs);
+  const [activeTabId, setActiveTabId] = useState<string>(() => initial.activeTabId);
 
   // Per-tab state map
-  const [tabStates, setTabStates] = useState<Record<string, TabState>>(() => ({
-    [initialTab.id]: emptyTabState(),
-  }));
+  const [tabStates, setTabStates] = useState<Record<string, TabState>>(() =>
+    Object.fromEntries(initial.tabs.map((t) => [t.id, emptyTabState()]))
+  );
+
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+  const activeTabIdRef = useRef(activeTabId);
+  activeTabIdRef.current = activeTabId;
+
+  // Persist open tabs (debounced, so typing does not hit storage every key).
+  useEffect(() => {
+    const handle = setTimeout(() => saveTabs(tabs, activeTabId), 400);
+    return () => clearTimeout(handle);
+  }, [tabs, activeTabId]);
+  useEffect(() => {
+    const flush = () => saveTabs(tabsRef.current, activeTabIdRef.current);
+    window.addEventListener("beforeunload", flush);
+    return () => window.removeEventListener("beforeunload", flush);
+  }, []);
 
   // Side panel
   const [sideTab, setSideTab] = useState<SideTab>("schema");
