@@ -15,8 +15,10 @@ import "./QueryEditor.css";
 interface Props {
   value: string;
   onChange: (value: string) => void;
-  onRun: () => void;
-  onExplain: () => void;
+  /** Called with the selected text, or the whole editor content. */
+  onRun: (statement: string) => void;
+  /** Called with the selected text, or the whole editor content. */
+  onExplain: (statement: string) => void;
   onSave: () => void;
   isRunning: boolean;
   schemaFields: SchemaField[];
@@ -50,40 +52,64 @@ export default function QueryEditor({
     const current = model.getValue();
     const formatted = formatN1QL(current);
     if (formatted !== current) {
-      // Preserve cursor position as best-effort
-      const pos = editor.getPosition();
-      model.setValue(formatted);
-      onChange(formatted);
-      if (pos) editor.setPosition(pos);
+      // executeEdits keeps the undo stack, so Ctrl+Z reverts the formatting.
+      // Monaco's change event propagates the new value through onChange.
+      editor.pushUndoStop();
+      editor.executeEdits("nickel-format", [
+        { range: model.getFullModelRange(), text: formatted },
+      ]);
+      editor.pushUndoStop();
     }
-  }, [onChange]);
+  }, []);
+
+  // Latest value / callbacks, read by Monaco commands registered once at mount.
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const callbacksRef = useRef({ onRun, onExplain, onSave, handleFormat, isRunning });
+  callbacksRef.current = { onRun, onExplain, onSave, handleFormat, isRunning };
+
+  /** Selected text if there is a non-empty selection, otherwise the whole editor value. */
+  const getActiveStatement = useCallback((): string => {
+    const editor = editorRef.current;
+    const selection = editor?.getSelection();
+    if (editor && selection && !selection.isEmpty()) {
+      const selected = editor.getModel()?.getValueInRange(selection);
+      if (selected && selected.trim()) return selected;
+    }
+    return valueRef.current;
+  }, []);
+
+  const run = useCallback(() => {
+    if (callbacksRef.current.isRunning) return;
+    callbacksRef.current.onRun(getActiveStatement());
+  }, [getActiveStatement]);
+
+  const explain = useCallback(() => {
+    if (callbacksRef.current.isRunning) return;
+    callbacksRef.current.onExplain(getActiveStatement());
+  }, [getActiveStatement]);
 
   const handleMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
 
     // Ctrl/Cmd + Enter to run
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
-      onRun();
-    });
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, run);
     // Ctrl/Cmd + Shift + E to explain
     editor.addCommand(
       monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyE,
-      () => {
-        onExplain();
-      }
+      explain
     );
     // Ctrl/Cmd + S to save
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-      onSave();
-    });
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () =>
+      callbacksRef.current.onSave()
+    );
     // Ctrl/Cmd + Shift + F to format
     editor.addCommand(
       monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyF,
-      () => {
-        handleFormat();
-      }
+      () => callbacksRef.current.handleFormat()
     );
+    editor.focus();
   };
 
   // Update schema-based completions when fields change
@@ -93,9 +119,16 @@ export default function QueryEditor({
 
     const disposable = monaco.languages.registerCompletionItemProvider("n1ql", {
       provideCompletionItems(
-        _model: MonacoType.editor.ITextModel,
-        _position: MonacoType.Position
+        model: MonacoType.editor.ITextModel,
+        position: MonacoType.Position
       ): MonacoType.languages.ProviderResult<MonacoType.languages.CompletionList> {
+        const word = model.getWordUntilPosition(position);
+        const range = new monaco.Range(
+          position.lineNumber,
+          word.startColumn,
+          position.lineNumber,
+          word.endColumn
+        );
         const fieldItems: MonacoType.languages.CompletionItem[] = schemaFields.map(
           (f) => ({
             label: f.name,
@@ -104,7 +137,7 @@ export default function QueryEditor({
             detail: f.field_type,
             sortText: "2" + f.name,
             documentation: `Field: ${f.name} (${f.field_type})`,
-            range: new monaco.Range(0, 0, 0, 0),
+            range,
           })
         );
         return { suggestions: fieldItems };
@@ -127,38 +160,12 @@ export default function QueryEditor({
     });
   };
 
-  // Get selected text or full value for execution
-  const getActiveStatement = useCallback((): string => {
-    const editor = editorRef.current;
-    if (!editor) return value;
-    const selection = editor.getSelection();
-    if (selection && !selection.isEmpty()) {
-      return editor.getModel()?.getValueInRange(selection) ?? value;
-    }
-    return value;
-  }, [value]);
-
-  const handleRunClick = () => {
-    // Expose selected statement to parent via a custom event or direct call
-    // We store it in the editor ref for the parent to access
-    onRun();
-  };
-
-  // Expose getActiveStatement via a property on the editor element
-  useEffect(() => {
-    const el = document.getElementById("query-editor-root");
-    if (el) {
-      (el as HTMLElement & { getActiveStatement?: () => string }).getActiveStatement =
-        getActiveStatement;
-    }
-  }, [getActiveStatement]);
-
   return (
-    <div className="query-editor-wrapper" id="query-editor-root">
+    <div className="query-editor-wrapper">
       <div className="qe-toolbar">
         <button
           className="btn btn-primary"
-          onClick={handleRunClick}
+          onClick={run}
           disabled={isRunning}
           data-tooltip="Run (Ctrl+Enter)"
         >
@@ -172,7 +179,7 @@ export default function QueryEditor({
         </button>
         <button
           className="btn"
-          onClick={onExplain}
+          onClick={explain}
           disabled={isRunning}
           data-tooltip="Explain Plan (Ctrl+Shift+E)"
         >

@@ -177,6 +177,8 @@ export function registerN1QLLanguage(monaco: typeof MonacoType): void {
         [/[=<>!]=?|&&|\|\||[+\-*/%]/, "operator"],
         // Punctuation
         [/[(),;.]/, "delimiter"],
+        // Parameters ($1, $name) — must come before identifiers, which also allow `$`
+        [/\$[\w]+/, "variable"],
         // Keywords
         [
           /\b([A-Za-z_$][\w$]*)\b/,
@@ -187,8 +189,6 @@ export function registerN1QLLanguage(monaco: typeof MonacoType): void {
             },
           },
         ],
-        // Parameters ($1, $name)
-        [/\$[\w]+/, "variable"],
       ],
       comment: [
         [/[^/*]+/, "comment"],
@@ -234,11 +234,17 @@ export function registerN1QLLanguage(monaco: typeof MonacoType): void {
 
   monaco.languages.registerCompletionItemProvider("n1ql", {
     provideCompletionItems(
-      _model: MonacoType.editor.ITextModel,
-      _position: MonacoType.Position,
-      _context: MonacoType.languages.CompletionContext,
-      _token: MonacoType.CancellationToken
+      model: MonacoType.editor.ITextModel,
+      position: MonacoType.Position
     ): MonacoType.languages.ProviderResult<MonacoType.languages.CompletionList> {
+      // Replace the word being typed (a 0,0,0,0 range is invalid in Monaco).
+      const word = model.getWordUntilPosition(position);
+      const range = new monaco.Range(
+        position.lineNumber,
+        word.startColumn,
+        position.lineNumber,
+        word.endColumn
+      );
       const keywordItems: MonacoType.languages.CompletionItem[] =
         N1QL_KEYWORDS.map((kw) => ({
           label: kw,
@@ -246,14 +252,14 @@ export function registerN1QLLanguage(monaco: typeof MonacoType): void {
           insertText: kw,
           detail: "keyword",
           sortText: "3" + kw,
-          range: new monaco.Range(0, 0, 0, 0),
+          range,
         }));
 
       return {
         suggestions: [
           ...N1QL_SNIPPETS.map((s) => ({
             ...s,
-            range: new monaco.Range(0, 0, 0, 0),
+            range,
           })),
           ...keywordItems,
         ],

@@ -37,6 +37,19 @@ This document tracks completed work and planned features across all versions.
 
 ---
 
+## ✅ v0.3.1 — Stability Fixes
+
+- [x] Result panel no longer crashes after the first query (React hook order)
+- [x] Run / Explain with a selection executes only the selected text; shortcuts no longer use stale query text
+- [x] Query errors show the real message (`[code] msg`) instead of `[object Object]`
+- [x] Schema Explorer lists scopes/collections (management API) and INFER uses correctly quoted keyspaces
+- [x] EXPLAIN viewer renders `{ plan, text }` results, follows `~child` / `scan(s)`, warns on PrimaryScan
+- [x] Formatter rewritten on a tokenizer: keeps comments, never uppercases field names, undoable
+- [x] Table view: columns from all rows, `SELECT RAW` support, copy as TSV/JSON, state reset per result
+- [x] Clear HTTP / auth errors from the backend; component, integration and Rust parser tests
+
+---
+
 ## 🔜 v0.4 — Advanced Query Tooling (Planned)
 
 - [ ] **Index Advisor** — Run `ADVISE` on the current statement and display recommended index definitions
