@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import "./ConnectionManager.css";
 import "./ShortcutsHelp.css";
 
@@ -37,6 +37,16 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
 ];
 
 export default function ShortcutsHelp({ onClose }: { onClose: () => void }) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  // Move focus into the dialog (so typing does not edit the query behind it)
+  // and give it back to where it was when the dialog closes.
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    closeRef.current?.focus();
+    return () => previous?.focus?.();
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -45,10 +55,12 @@ export default function ShortcutsHelp({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="cm-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="cm-modal sh-modal" role="dialog" aria-label="Keyboard shortcuts">
+      <div className="cm-modal sh-modal" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
         <div className="cm-header">
           <h2 className="cm-title">⌨ Keyboard Shortcuts</h2>
-          <button className="btn btn-ghost cm-close" onClick={onClose} aria-label="Close">✕</button>
+          <button ref={closeRef} className="btn btn-ghost cm-close" onClick={onClose} aria-label="Close">
+            ✕
+          </button>
         </div>
         <div className="sh-body">
           {SHORTCUTS.map((g) => (

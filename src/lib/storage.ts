@@ -174,18 +174,32 @@ const DEFAULT_CONNECTION: SavedConnection = {
  */
 export function loadConnections(): SavedConnection[] {
   const stored = load<SavedConnection[]>(CONNECTIONS_KEY);
-  if (stored && stored.length > 0) return stored;
+  if (stored && stored.length > 0) {
+    // A legacy record left over from an older version may still hold a
+    // plain-text password; its data already lives in the named list.
+    removeLegacyConnection();
+    return stored;
+  }
 
-  // Migrate legacy connection
+  // Migrate legacy connection (then remove it, so the password is not kept twice)
   const legacy = load<StoredConnection>(CONN_KEY);
   if (legacy) {
     const migrated: SavedConnection = { id: "default", name: "Default", ...legacy };
     save(CONNECTIONS_KEY, [migrated]);
+    removeLegacyConnection();
     return [migrated];
   }
 
   save(CONNECTIONS_KEY, [DEFAULT_CONNECTION]);
   return [DEFAULT_CONNECTION];
+}
+
+function removeLegacyConnection(): void {
+  try {
+    localStorage.removeItem(CONN_KEY);
+  } catch {
+    // storage unavailable
+  }
 }
 
 export function saveConnections(connections: SavedConnection[]): void {

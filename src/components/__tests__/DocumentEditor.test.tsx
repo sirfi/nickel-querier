@@ -7,6 +7,7 @@ vi.mock("../../lib/commands", () => ({
   executeQuery: async (_c: unknown, req: { statement: string; parameters?: unknown[] }) => {
     calls.push(req);
     const key = req.parameters?.[0] as string;
+    if (key === "boom") throw new Error("load failed");
     let results: unknown[] = [];
     if (req.statement.startsWith("SELECT")) results = key in docs ? [{ doc: docs[key] }] : [];
     if (req.statement.startsWith("UPSERT")) { docs[key] = req.parameters?.[1]; results = [{ cas: 1 }]; }
@@ -53,5 +54,18 @@ describe("DocumentEditor", () => {
     fireEvent.click(screen.getByText("Delete"));
     await waitFor(() => expect(screen.getByText("Deleted k1")).toBeTruthy());
     expect(docs).toEqual({});
+  });
+});
+
+describe("DocumentEditor — failed load", () => {
+  it("does not keep the previous document editable when loading another key fails", async () => {
+    render(<DocumentEditor config={config} keyspace={ks} initialKey="k1" onClose={() => {}} />);
+    await screen.findByDisplayValue(/"old"/);
+    fireEvent.change(screen.getByPlaceholderText("Document key (META().id)"), { target: { value: "boom" } });
+    fireEvent.click(screen.getByText("Load"));
+    await screen.findByText(/load failed/);
+    expect((screen.getByText("Save") as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByText("Delete") as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByDisplayValue(/"old"/)).toBeNull();
   });
 });

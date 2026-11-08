@@ -188,3 +188,52 @@ describe("App shortcuts help", () => {
     expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
   });
 });
+
+describe("App — review fixes (PR #12)", () => {
+  const twoConnections = () =>
+    localStorage.setItem("nq_connections", JSON.stringify([
+      { id: "a", name: "Cluster A", host: "a.example", port: 8093, username: "u", password: "", tls: false, keychain: true },
+      { id: "b", name: "Cluster B", host: "b.example", port: 8093, username: "u", password: "", tls: false, keychain: true },
+    ]));
+
+  it("sends Stop to the cluster the query started on, even after switching connection", async () => {
+    twoConnections();
+    executeQuery.mockReturnValue(new Promise(() => {}));
+    cancelQuery.mockResolvedValue(true);
+    render(<App />);
+    fireEvent.click(screen.getByText("▶ Run"));
+    fireEvent.change(screen.getByTitle("Select connection"), { target: { value: "b" } });
+    fireEvent.click(await screen.findByText("■ Stop"));
+    await waitFor(() => expect(cancelQuery).toHaveBeenCalled());
+    expect(cancelQuery.mock.calls[0][0].host).toBe("a.example");
+  });
+
+  it("re-enables Stop and explains when cancellation fails", async () => {
+    executeQuery.mockReturnValue(new Promise(() => {}));
+    cancelQuery.mockResolvedValue(false);
+    render(<App />);
+    fireEvent.click(screen.getByText("▶ Run"));
+    fireEvent.click(await screen.findByText("■ Stop"));
+    expect(await screen.findByText(/did not find the request/)).toBeTruthy();
+    expect((screen.getByText("■ Stop").closest("button") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("warns when existing passwords cannot be moved to the keychain", async () => {
+    localStorage.setItem("nq_connections", JSON.stringify([
+      { id: "p", name: "Plain", host: "h", port: 8093, username: "u", password: "secret", tls: false },
+    ]));
+    render(<App />);
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain("Plain");
+  });
+
+  it("moves focus into the shortcuts dialog and back", () => {
+    render(<App />);
+    const editor = screen.getByTestId("editor");
+    editor.focus();
+    fireEvent.keyDown(window, { key: "?", ctrlKey: true, shiftKey: true });
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Close");
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(document.activeElement).toBe(editor);
+  });
+});

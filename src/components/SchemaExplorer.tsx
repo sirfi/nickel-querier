@@ -35,7 +35,7 @@ export default function SchemaExplorer({ config, onFieldsChange, onOpenQuery, on
   // (id matters: keychain connections have an empty password field)
   const connKey = [
     config.id, config.tls, config.verify_tls, config.host, config.port,
-    config.mgmt_port, config.username, config.password,
+    config.mgmt_port, config.username, config.password, config.keychain,
   ].join("|");
 
   const setBusyFlag = (id: string, on: boolean) =>
@@ -55,6 +55,7 @@ export default function SchemaExplorer({ config, onFieldsChange, onOpenQuery, on
   const refresh = useCallback(async () => {
     const gen = ++generationRef.current;
     setLoading(true);
+    setBuckets([]); // the previous connection's buckets must not linger (completions)
     setBusy(new Set());
     setError(null);
     setSchemas({});

@@ -15,6 +15,10 @@ interface Props {
 export default function ResizeHandle({ orientation, onDrag, onStep, onReset, className, label }: Props) {
   const dragging = useRef(false);
   const horizontal = orientation === "horizontal";
+  const endDrag = () => {
+    dragging.current = false;
+    document.body.classList.remove("is-resizing-row", "is-resizing-col");
+  };
 
   return (
     <div
@@ -34,10 +38,12 @@ export default function ResizeHandle({ orientation, onDrag, onStep, onReset, cla
         if (dragging.current) onDrag(horizontal ? e.clientY : e.clientX);
       }}
       onPointerUp={(e) => {
-        dragging.current = false;
         e.currentTarget.releasePointerCapture?.(e.pointerId);
-        document.body.classList.remove("is-resizing-row", "is-resizing-col");
+        endDrag();
       }}
+      // The browser may cancel the gesture (e.g. touch scrolling) or drop capture
+      onPointerCancel={endDrag}
+      onLostPointerCapture={endDrag}
       onDoubleClick={onReset}
       onKeyDown={(e) => {
         const back = horizontal ? "ArrowUp" : "ArrowLeft";

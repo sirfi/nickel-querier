@@ -402,3 +402,23 @@ describe("saved queries import / export", () => {
     expect(() => importSavedQueries('{"x":1}')).toThrow("No saved queries");
   });
 });
+
+describe("legacy connection scrub", () => {
+  it("removes the legacy single-connection record once migrated", async () => {
+    const { loadConnections } = await import("./storage");
+    localStorage.clear();
+    localStorage.setItem("nq_connection", JSON.stringify({ host: "h", port: 8093, username: "u", password: "plain", tls: false }));
+    const conns = loadConnections();
+    expect(conns[0].password).toBe("plain");
+    expect(localStorage.getItem("nq_connection")).toBeNull();
+  });
+
+  it("scrubs a leftover legacy record when named connections already exist", async () => {
+    const { loadConnections, saveConnections } = await import("./storage");
+    localStorage.clear();
+    saveConnections([{ id: "a", name: "A", host: "h", port: 1, username: "u", password: "", tls: false, keychain: true }]);
+    localStorage.setItem("nq_connection", JSON.stringify({ host: "h", password: "plain" }));
+    loadConnections();
+    expect(localStorage.getItem("nq_connection")).toBeNull();
+  });
+});

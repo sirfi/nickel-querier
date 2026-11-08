@@ -23,6 +23,8 @@ interface Props {
   result: QueryResult | null;
   error: string | null;
   isLoading: boolean;
+  /** Extra line under the spinner (e.g. why a Stop request failed) */
+  loadingNote?: string | null;
 }
 
 const PAGE_SIZE = 100;
@@ -37,7 +39,7 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-export default function ResultViewer({ result, error, isLoading }: Props) {
+export default function ResultViewer({ result, error, isLoading, loadingNote }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>("table");
   const [page, setPage] = useState(0);
   const [sortColumn, setSortColumn] = useState<string | null>(null);
@@ -70,6 +72,7 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
       <div className="rv-placeholder">
         <span className="rv-spinner" />
         <span>Executing query…</span>
+        {loadingNote && <span className="rv-loading-note" role="status">{loadingNote}</span>}
       </div>
     );
   }
@@ -264,7 +267,19 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
                 onClick={() => setSelectedRow(row === selectedRow ? null : row)}
                 title="Click to show the full row"
               >
-                <td className="rv-td rv-td-row">{page * PAGE_SIZE + i + 1}</td>
+                <td className="rv-td rv-td-row">
+                  <button
+                    className="rv-row-btn"
+                    aria-label={`Show row ${page * PAGE_SIZE + i + 1}`}
+                    aria-expanded={row === selectedRow}
+                    onClick={(e) => {
+                      e.stopPropagation(); // the row's own click handler would toggle again
+                      setSelectedRow(row === selectedRow ? null : row);
+                    }}
+                  >
+                    {page * PAGE_SIZE + i + 1}
+                  </button>
+                </td>
                 {columns.map((col) => (
                   <td key={col} className="rv-td">
                     <CellValue value={row[col]} />

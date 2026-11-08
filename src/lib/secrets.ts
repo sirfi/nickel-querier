@@ -10,6 +10,15 @@ export interface SecureResult {
   warning?: string;
 }
 
+// Keychain writes run one at a time in call order, so a password saved by the
+// user can never be overwritten by a slower, earlier write (e.g. migration).
+let queue: Promise<unknown> = Promise.resolve();
+function serialised<T>(fn: () => Promise<T>): Promise<T> {
+  const run = queue.then(fn, fn);
+  queue = run.catch(() => undefined);
+  return run;
+}
+
 /**
  * Move a connection's password into the OS keychain. On success the stored
  * connection keeps `password: ""` and `keychain: true`. If the keychain is
@@ -18,7 +27,7 @@ export interface SecureResult {
 export async function secureConnection(conn: SavedConnection): Promise<SecureResult> {
   if (!conn.password) return { connection: conn };
   try {
-    await setConnectionSecret(conn.id, conn.password);
+    await serialised(() => setConnectionSecret(conn.id, conn.password));
     return { connection: { ...conn, password: "", keychain: true } };
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
@@ -29,20 +38,37 @@ export async function secureConnection(conn: SavedConnection): Promise<SecureRes
   }
 }
 
-/** Move any plain-text passwords from older versions into the keychain. */
+/**
+ * Move plain-text passwords from older versions into the keychain.
+ * `migrated` maps connection id → the password that was moved, so the caller
+ * can apply the result to the *current* list (see `applyMigratedSecrets`).
+ */
 export async function migrateConnectionSecrets(
   connections: SavedConnection[]
-): Promise<{ connections: SavedConnection[]; changed: boolean }> {
-  let changed = false;
-  const out: SavedConnection[] = [];
+): Promise<{ migrated: Record<string, string>; warnings: string[] }> {
+  const migrated: Record<string, string> = {};
+  const warnings: string[] = [];
   for (const c of connections) {
-    if (c.password && !c.keychain) {
-      const { connection, warning } = await secureConnection(c);
-      if (!warning) changed = true;
-      out.push(warning ? c : connection);
-    } else {
-      out.push(c);
-    }
+    if (!c.password || c.keychain) continue;
+    const { warning } = await secureConnection(c);
+    if (warning) warnings.push(`${c.name}: ${warning}`);
+    else migrated[c.id] = c.password;
   }
-  return { connections: out, changed };
+  return { migrated, warnings };
+}
+
+/**
+ * Mark migrated connections as keychain-backed in `current`, but only those
+ * whose password is still the one that was migrated — connections added,
+ * edited or deleted while migration ran are left exactly as they are.
+ */
+export function applyMigratedSecrets(
+  current: SavedConnection[],
+  migrated: Record<string, string>
+): SavedConnection[] {
+  return current.map((c) =>
+    c.id in migrated && !c.keychain && c.password === migrated[c.id]
+      ? { ...c, password: "", keychain: true }
+      : c
+  );
 }
