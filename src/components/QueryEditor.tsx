@@ -196,9 +196,11 @@ export default function QueryEditor({
         const fieldRange = new monaco.Range(
           position.lineNumber, word.startColumn, position.lineNumber, word.endColumn
         );
-        const ksStart = extendForBacktick(model.getLineContent(position.lineNumber), word.startColumn);
+        const ks = extendForBacktick(
+          model.getLineContent(position.lineNumber), word.startColumn, word.endColumn
+        );
         const ksRange = new monaco.Range(
-          position.lineNumber, ksStart, position.lineNumber, word.endColumn
+          position.lineNumber, ks.startColumn, position.lineNumber, ks.endColumn
         );
         return {
           suggestions: items.map((s) => ({

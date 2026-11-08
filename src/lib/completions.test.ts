@@ -18,8 +18,12 @@ describe("buildSchemaSuggestions", () => {
 
 describe("extendForBacktick", () => {
   it("includes a preceding backtick in the range", () => {
-    // "FROM `tra" — word "tra" starts at column 7, backtick at column 6
-    expect(extendForBacktick("FROM `tra", 7)).toBe(6);
-    expect(extendForBacktick("FROM tra", 6)).toBe(6);
+    // "FROM `tra" — word "tra" spans columns 7..10, backtick at column 6
+    expect(extendForBacktick("FROM `tra", 7, 10)).toEqual({ startColumn: 6, endColumn: 10 });
+    expect(extendForBacktick("FROM tra", 6, 9)).toEqual({ startColumn: 6, endColumn: 9 });
+  });
+
+  it("also consumes the auto-closed backtick after the word", () => {
+    expect(extendForBacktick("FROM `tra` x", 7, 10)).toEqual({ startColumn: 6, endColumn: 11 });
   });
 });

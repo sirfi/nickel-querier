@@ -41,7 +41,20 @@ export function buildSchemaSuggestions(fields: SchemaField[], keyspaces: string[
   return out;
 }
 
-/** Start column of the replace range: include a backtick right before the word. */
-export function extendForBacktick(lineText: string, wordStartColumn: number): number {
-  return lineText[wordStartColumn - 2] === "`" ? wordStartColumn - 1 : wordStartColumn;
+/**
+ * Replace range for a keyspace completion: include a backtick right before
+ * the word and the one Monaco auto-inserted right after it (`` `trav` ``).
+ * Columns are 1-based, `endColumn` is exclusive.
+ */
+export function extendForBacktick(
+  lineText: string,
+  wordStartColumn: number,
+  wordEndColumn: number
+): { startColumn: number; endColumn: number } {
+  const opens = lineText[wordStartColumn - 2] === "`";
+  const closes = opens && lineText[wordEndColumn - 1] === "`";
+  return {
+    startColumn: opens ? wordStartColumn - 1 : wordStartColumn,
+    endColumn: closes ? wordEndColumn + 1 : wordEndColumn,
+  };
 }
