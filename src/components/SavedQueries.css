@@ -60,6 +60,13 @@
 .sq-item:hover { background: var(--bg-hover); }
 
 .sq-name {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
@@ -79,6 +86,8 @@
 }
 
 .sq-tag {
+  cursor: pointer;
+  font-family: inherit;
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 10px;
@@ -100,7 +109,10 @@
   gap: 4px;
   opacity: 0;
 }
-.sq-item:hover .sq-actions { opacity: 1; }
+.sq-item:hover .sq-actions,
+.sq-item:focus-within .sq-actions,
+.sq-folder-head:hover .sq-actions,
+.sq-folder-head:focus-within .sq-actions { opacity: 1; }
 
 .sq-btn {
   padding: 2px 6px;
@@ -123,3 +135,50 @@
 .sq-import { position: relative; cursor: pointer; }
 .sq-import input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
 .sq-notice { font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.sq-tag.active { background: var(--accent); color: var(--bg-base); border-color: var(--accent); }
+.sq-tag-count { opacity: 0.7; }
+.sq-tagbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.sq-name:focus-visible, .sq-folder-toggle:focus-visible { outline: 1px solid var(--accent); border-radius: 3px; }
+
+/* ---- Folders ---- */
+.sq-list.drop { background: rgba(88, 166, 255, 0.06); }
+.sq-folder { list-style: none; }
+.sq-children { list-style: none; padding-left: 14px; border-left: 1px solid var(--border); margin-left: 12px; }
+.sq-folder-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: var(--radius);
+  margin: 1px 4px;
+}
+.sq-folder-head:hover { background: var(--bg-hover); }
+.sq-folder-head.drop { background: rgba(88, 166, 255, 0.18); outline: 1px dashed var(--accent); }
+.sq-folder-toggle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  min-width: 0;
+}
+.sq-chevron { color: var(--text-muted); font-size: 10px; width: 10px; }
+.sq-count { margin-left: auto; color: var(--text-muted); font-weight: 400; font-size: 11px; }
+.sq-rename { flex: 1; font-size: 12px; padding: 2px 6px; }
+.sq-folder-label { font-size: 11px; color: var(--text-muted); margin-bottom: 3px; }
+.sq-item[draggable="true"] { cursor: grab; }

@@ -86,6 +86,8 @@ export interface SavedQuery {
   statement: string;
   created_at: string;
   tags: string[];
+  /** Folder path such as "Reports/Daily" ("" or missing = root) */
+  folder?: string;
 }
 
 export type TabId = "results" | "explain" | "history" | "saved";
