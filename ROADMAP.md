@@ -50,7 +50,7 @@ This document tracks completed work and planned features across all versions.
 
 ---
 
-## ✅ v0.4 — Advanced Query Tooling & Productivity (Current Release — v0.4.0)
+## ✅ v0.4 — Advanced Query Tooling & Productivity (Completed)
 
 - [x] **Index Advisor** — Run `ADVISE` on the current statement and display recommended index definitions
 - [x] **Index List** — Indexes of each collection in the schema panel (`system:indexes`)
@@ -64,13 +64,17 @@ This document tracks completed work and planned features across all versions.
 - [x] **Native Save-as Export**, saved-query import/export, connection shown in history
 - [x] **Keyboard Shortcut Cheat-Sheet** (`Ctrl/⌘ + ?`) and keyspace autocomplete
 
-## 🔜 v0.5 — Planned
+## ✅ v0.5 — Collaboration & Productivity (Current Release — v0.5.0)
 
-- [ ] **Query Plan Diff** — Side-by-side comparison of two EXPLAIN plans to evaluate index or query changes
-- [ ] **`at_plus` Scan Consistency** — Requires mutation tokens from the KV layer
-- [ ] **Query Sharing** — Deep-link URL for a saved query (JSON file export is done)
-- [ ] **Folder / Tag Organisation** — Group saved queries into nested folders with drag-and-drop
-- [ ] **Clipboard History** — Quick-paste recent query fragments from a side popover
+- [x] **Query Plan Diff** — Pin an EXPLAIN plan as baseline and compare the next one side by side (added / removed / changed operators, index summary)
+- [x] **Folder / Tag Organisation** — Nested folders for saved queries with drag-and-drop (and keyboard) moves; tag filter bar
+- [x] **Query Sharing** — `nickelquerier://query?…` links for saved queries; paste a link to open it in a new tab
+- [x] **Clipboard History** — Recently copied editor fragments in a popover (`Ctrl/⌘ + Shift + V`)
+
+## 🔜 v0.6 — Planned
+
+- [ ] **OS Deep-Link Registration** — Open `nickelquerier://` links directly from the browser / chat (Tauri deep-link + single-instance plugins; needs per-platform testing)
+- [ ] **`at_plus` Scan Consistency** — Needs mutation tokens (scan vectors) from the KV layer; the Query REST API alone cannot produce them
 
 ---
 

@@ -1,6 +1,6 @@
 # ⬡ Nickel Querier — SQL+++ for Couchbase
 
-![Version](https://img.shields.io/badge/version-0.4.0-blue)
+![Version](https://img.shields.io/badge/version-0.5.0-blue)
 
 A stable, workflow-oriented, cross-platform query tool for **Couchbase N1QL / SQL++**.
 
@@ -41,6 +41,12 @@ Built with **Tauri** (Rust backend) + **Monaco Editor** + **Couchbase Query Serv
 - **Keyspace Completions** — Bucket and collection names in autocomplete; nested fields from `INFER`
 - **Saved Query Import / Export** — Share saved queries as a JSON file; history remembers the connection used
 - **Keyboard Shortcut List** — `Ctrl/⌘ + ?`
+
+### Collaboration (v0.5)
+- **Query Plan Diff** — 📌 Pin an EXPLAIN plan, change the query or add an index, EXPLAIN again and see both plans side by side
+- **Folders & Tags** — Organise saved queries in nested folders (drag and drop), filter by tag
+- **Share Links** — Copy a `nickelquerier://query?…` link for a saved query; 🔗 Open link to load one
+- **Clipboard History** — `Ctrl/⌘ + Shift + V` re-inserts recently copied fragments
 
 ### Security
 - **Passwords in the OS Keychain** — macOS Keychain, Windows Credential Manager or Linux Secret Service; older plain-text passwords are migrated automatically
