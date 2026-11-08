@@ -8,6 +8,7 @@ import SavedQueries from "./components/SavedQueries";
 import SchemaExplorer from "./components/SchemaExplorer";
 import ExplainViewer from "./components/ExplainViewer";
 import ParamsPanel from "./components/ParamsPanel";
+import ResizeHandle from "./components/ResizeHandle";
 import { buildParams } from "./lib/params";
 
 import { executeQuery, getExplainPlan, cancelQuery } from "./lib/commands";
@@ -22,6 +23,11 @@ import {
   saveTheme,
   loadTabs,
   saveTabs,
+  loadLayout,
+  saveLayout,
+  clampLayout,
+  DEFAULT_LAYOUT,
+  type Layout,
   type AppTheme,
 } from "./lib/storage";
 
@@ -158,6 +164,29 @@ export default function App() {
     window.addEventListener("beforeunload", flush);
     return () => window.removeEventListener("beforeunload", flush);
   }, []);
+
+  // ---------- Layout (resizable panes) ----------
+  const [layout, setLayoutState] = useState<Layout>(() => loadLayout());
+  const setLayout = (patch: Partial<Layout>) =>
+    setLayoutState((prev) => {
+      const next = clampLayout({ ...prev, ...patch });
+      saveLayout(next);
+      return next;
+    });
+  const editorPaneRef = useRef<HTMLDivElement>(null);
+  const resultPaneRef = useRef<HTMLDivElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
+
+  const dragEditorSplit = (clientY: number) => {
+    const top = editorPaneRef.current?.getBoundingClientRect().top;
+    const bottom = resultPaneRef.current?.getBoundingClientRect().bottom;
+    if (top === undefined || bottom === undefined || bottom <= top) return;
+    setLayout({ editorRatio: (clientY - top) / (bottom - top) });
+  };
+  const dragSidebar = (clientX: number) => {
+    const left = sidebarRef.current?.getBoundingClientRect().left ?? 0;
+    setLayout({ sidebarWidth: clientX - left });
+  };
 
   // Side panel
   const [sideTab, setSideTab] = useState<SideTab>("schema");
@@ -396,7 +425,7 @@ export default function App() {
       <div className="app-body">
         {/* Side panel */}
         {sideOpen && (
-          <aside className="app-sidebar">
+          <aside className="app-sidebar" ref={sidebarRef} style={{ width: layout.sidebarWidth }}>
             <div className="sidebar-tabs">
               {(["schema", "history", "saved"] as SideTab[]).map((t) => (
                 <button
@@ -441,6 +470,17 @@ export default function App() {
           </aside>
         )}
 
+        {sideOpen && (
+          <ResizeHandle
+            orientation="vertical"
+            className="app-resize-handle-col"
+            label="Resize side panel"
+            onDrag={dragSidebar}
+            onStep={(d) => setLayout({ sidebarWidth: layout.sidebarWidth + d * 20 })}
+            onReset={() => setLayout({ sidebarWidth: DEFAULT_LAYOUT.sidebarWidth })}
+          />
+        )}
+
         {/* Main content: tabs + editor + results */}
         <main className="app-main">
           {/* Query tabs bar */}
@@ -455,7 +495,11 @@ export default function App() {
           />
 
           {/* Editor pane */}
-          <div className="app-editor-pane">
+          <div
+            className="app-editor-pane"
+            ref={editorPaneRef}
+            style={{ flex: `${layout.editorRatio} 1 0` }}
+          >
             <QueryEditor
               key={activeTabId}
               value={activeTab.query}
@@ -481,10 +525,21 @@ export default function App() {
           </div>
 
           {/* Resize handle */}
-          <div className="app-resize-handle" />
+          <ResizeHandle
+            orientation="horizontal"
+            className="app-resize-handle"
+            label="Resize editor and results"
+            onDrag={dragEditorSplit}
+            onStep={(d) => setLayout({ editorRatio: layout.editorRatio + d * 0.05 })}
+            onReset={() => setLayout({ editorRatio: DEFAULT_LAYOUT.editorRatio })}
+          />
 
           {/* Result pane */}
-          <div className="app-result-pane">
+          <div
+            className="app-result-pane"
+            ref={resultPaneRef}
+            style={{ flex: `${1 - layout.editorRatio} 1 0` }}
+          >
             <div className="result-tabs">
               <button
                 className={`result-tab ${activeState.resultTab === "results" ? "active" : ""}`}

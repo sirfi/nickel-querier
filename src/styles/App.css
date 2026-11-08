@@ -84,12 +84,9 @@
 /* ---- Sidebar ---- */
 .app-sidebar {
   width: 260px;
-  min-width: 200px;
-  max-width: 380px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--border);
   background: var(--bg-panel);
   overflow: hidden;
 }
@@ -146,7 +143,21 @@
   cursor: row-resize;
   flex-shrink: 0;
 }
-.app-resize-handle:hover { background: var(--accent-dim); }
+.app-resize-handle:hover,
+.app-resize-handle:focus-visible { background: var(--accent-dim); outline: none; }
+
+.app-resize-handle-col {
+  width: 4px;
+  background: var(--border);
+  cursor: col-resize;
+  flex-shrink: 0;
+}
+.app-resize-handle-col:hover,
+.app-resize-handle-col:focus-visible { background: var(--accent-dim); outline: none; }
+
+/* While dragging: keep the cursor and stop text selection / Monaco stealing events */
+body.is-resizing-row, body.is-resizing-row * { cursor: row-resize !important; user-select: none; }
+body.is-resizing-col, body.is-resizing-col * { cursor: col-resize !important; user-select: none; }
 
 .app-result-pane {
   flex: 1;

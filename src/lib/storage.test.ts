@@ -369,3 +369,13 @@ describe("tabs persistence", () => {
     expect(loadTabs()?.activeTabId).toBe("a");
   });
 });
+
+describe("layout", () => {
+  it("clamps and round-trips", async () => {
+    const { saveLayout, loadLayout, clampLayout } = await import("./storage");
+    expect(clampLayout({ editorRatio: 2, sidebarWidth: 10 })).toEqual({ editorRatio: 0.85, sidebarWidth: 180 });
+    expect(clampLayout({})).toEqual({ editorRatio: 0.5, sidebarWidth: 260 });
+    saveLayout({ editorRatio: 0.3, sidebarWidth: 300 });
+    expect(loadLayout()).toEqual({ editorRatio: 0.3, sidebarWidth: 300 });
+  });
+});

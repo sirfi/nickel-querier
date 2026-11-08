@@ -11,6 +11,7 @@ const LAST_CONN_ID_KEY = "nq_last_conn_id";
 const THEME_KEY = "nq_theme";
 const EDITOR_FONT_SIZE_KEY = "nq_editor_font_size";
 const TABS_KEY = "nq_tabs";
+const LAYOUT_KEY = "nq_layout";
 const MAX_HISTORY = 200;
 
 const EDITOR_FONT_SIZE_MIN = 10;
@@ -198,6 +199,38 @@ export function saveTabs(tabs: QueryTab[], activeTabId: string): void {
     })),
     activeTabId,
   });
+}
+
+// ---------- Layout ----------
+
+export interface Layout {
+  /** Editor share of the editor+results height, 0.15 – 0.85 */
+  editorRatio: number;
+  /** Sidebar width in px */
+  sidebarWidth: number;
+}
+
+export const DEFAULT_LAYOUT: Layout = { editorRatio: 0.5, sidebarWidth: 260 };
+export const SIDEBAR_MIN = 180;
+export const SIDEBAR_MAX = 600;
+
+export function clampLayout(l: Partial<Layout>): Layout {
+  const ratio = Number(l.editorRatio);
+  const width = Number(l.sidebarWidth);
+  return {
+    editorRatio: Number.isFinite(ratio) ? Math.min(0.85, Math.max(0.15, ratio)) : DEFAULT_LAYOUT.editorRatio,
+    sidebarWidth: Number.isFinite(width)
+      ? Math.round(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, width)))
+      : DEFAULT_LAYOUT.sidebarWidth,
+  };
+}
+
+export function loadLayout(): Layout {
+  return clampLayout(load<Partial<Layout>>(LAYOUT_KEY) ?? {});
+}
+
+export function saveLayout(layout: Layout): void {
+  save(LAYOUT_KEY, clampLayout(layout));
 }
 
 // ---------- Theme ----------
