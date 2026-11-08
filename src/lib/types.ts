@@ -75,6 +75,9 @@ export interface HistoryEntry {
   row_count: number;
   status: "success" | "error";
   error?: string;
+  /** Connection the query ran on (name kept for display if the connection is deleted) */
+  connectionId?: string;
+  connectionName?: string;
 }
 
 export interface SavedQuery {

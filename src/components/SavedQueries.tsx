@@ -5,6 +5,8 @@ import {
   deleteSavedQuery,
   updateSavedQuery,
 } from "../lib/storage";
+import { exportSavedQueries, importSavedQueries } from "../lib/storage";
+import { saveTextFile, timestampedName } from "../lib/export";
 import "./SavedQueries.css";
 
 interface Props {
@@ -27,6 +29,38 @@ export default function SavedQueries({
   const [showSaveForm, setShowSaveForm] = useState(false);
   const [newName, setNewName] = useState("");
   const [newTags, setNewTags] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const flash = (msg: string) => {
+    setNotice(msg);
+    setTimeout(() => setNotice(null), 4000);
+  };
+
+  const handleExport = async () => {
+    try {
+      const path = await saveTextFile({
+        fileName: timestampedName("saved-queries", "json"),
+        contents: exportSavedQueries(queries),
+        mime: "application/json",
+        filterName: "JSON",
+        extensions: ["json"],
+      });
+      if (path) flash(`Exported ${queries.length} queries`);
+    } catch (e) {
+      flash(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  const handleImport = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const { added, skipped } = importSavedQueries(await file.text());
+      onRefresh();
+      flash(`Imported ${added}${skipped ? `, skipped ${skipped} duplicate/invalid` : ""}`);
+    } catch (e) {
+      flash(`Import failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
 
   const filtered = queries.filter(
     (q) =>
@@ -89,6 +123,24 @@ export default function SavedQueries({
         >
           + Save
         </button>
+      </div>
+      <div className="sq-io">
+        <button className="btn btn-ghost sq-btn" onClick={handleExport} disabled={queries.length === 0}>
+          ↓ Export
+        </button>
+        <label className="btn btn-ghost sq-btn sq-import">
+          ↑ Import
+          <input
+            type="file"
+            accept="application/json,.json"
+            aria-label="Import saved queries"
+            onChange={(e) => {
+              handleImport(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+        </label>
+        {notice && <span className="sq-notice">{notice}</span>}
       </div>
 
       {showSaveForm && (

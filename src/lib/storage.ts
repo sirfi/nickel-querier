@@ -77,6 +77,59 @@ export function updateSavedQuery(updated: SavedQuery): void {
   save(SAVED_KEY, saved);
 }
 
+export const SAVED_QUERIES_EXPORT_FORMAT = "nickel-querier/saved-queries";
+
+/** File contents for exporting saved queries. */
+export function exportSavedQueries(queries: SavedQuery[]): string {
+  return JSON.stringify({ format: SAVED_QUERIES_EXPORT_FORMAT, version: 1, queries }, null, 2);
+}
+
+function isSavedQuery(q: unknown): q is SavedQuery {
+  if (!q || typeof q !== "object") return false;
+  const o = q as Record<string, unknown>;
+  return typeof o.name === "string" && typeof o.statement === "string";
+}
+
+/**
+ * Merge imported queries (an export file, or a plain array) into the saved
+ * list. Entries with the same name and statement as an existing query are
+ * skipped; others get a fresh id.
+ */
+export function importSavedQueries(json: string): { added: number; skipped: number } {
+  let data: unknown;
+  try {
+    data = JSON.parse(json);
+  } catch {
+    throw new Error("The file is not valid JSON");
+  }
+  const list = Array.isArray(data)
+    ? data
+    : data && typeof data === "object" && Array.isArray((data as { queries?: unknown }).queries)
+      ? (data as { queries: unknown[] }).queries
+      : null;
+  if (!list) throw new Error("No saved queries found in the file");
+
+  const existing = loadSavedQueries();
+  const seen = new Set(existing.map((q) => `${q.name}\u0000${q.statement}`));
+  const added: SavedQuery[] = [];
+  let skipped = 0;
+  for (const raw of list) {
+    if (!isSavedQuery(raw)) { skipped++; continue; }
+    const key = `${raw.name}\u0000${raw.statement}`;
+    if (seen.has(key)) { skipped++; continue; }
+    seen.add(key);
+    added.push({
+      id: crypto.randomUUID(),
+      name: raw.name,
+      statement: raw.statement,
+      created_at: typeof raw.created_at === "string" ? raw.created_at : new Date().toISOString(),
+      tags: Array.isArray(raw.tags) ? raw.tags.filter((t): t is string => typeof t === "string") : [],
+    });
+  }
+  save(SAVED_KEY, [...added, ...existing]);
+  return { added: added.length, skipped };
+}
+
 // ---------- Connection Config (legacy single-connection) ----------
 
 export interface StoredConnection {

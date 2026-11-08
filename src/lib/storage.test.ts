@@ -379,3 +379,26 @@ describe("layout", () => {
     expect(loadLayout()).toEqual({ editorRatio: 0.3, sidebarWidth: 300 });
   });
 });
+
+describe("saved queries import / export", () => {
+  it("round-trips and skips duplicates", async () => {
+    const { addSavedQuery, exportSavedQueries, importSavedQueries, loadSavedQueries } = await import("./storage");
+    localStorage.clear();
+    addSavedQuery({ id: "1", name: "a", statement: "SELECT 1", created_at: "2026-01-01T00:00:00Z", tags: ["x"] });
+    const file = exportSavedQueries(loadSavedQueries());
+    expect(importSavedQueries(file)).toEqual({ added: 0, skipped: 1 });
+
+    localStorage.clear();
+    expect(importSavedQueries(file)).toEqual({ added: 1, skipped: 0 });
+    expect(loadSavedQueries()[0]).toMatchObject({ name: "a", statement: "SELECT 1", tags: ["x"] });
+  });
+
+  it("accepts a plain array and rejects garbage", async () => {
+    const { importSavedQueries } = await import("./storage");
+    localStorage.clear();
+    expect(importSavedQueries(JSON.stringify([{ name: "n", statement: "s" }, { bad: 1 }])))
+      .toEqual({ added: 1, skipped: 1 });
+    expect(() => importSavedQueries("{")).toThrow("not valid JSON");
+    expect(() => importSavedQueries('{"x":1}')).toThrow("No saved queries");
+  });
+});

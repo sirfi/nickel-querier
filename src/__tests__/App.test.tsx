@@ -85,6 +85,7 @@ describe("App", () => {
     await waitFor(() => expect(screen.getByText("Query error: [3000] syntax error")).toBeTruthy());
     const history = JSON.parse(localStorage.getItem("nq_history") ?? "[]");
     expect(history[0].status).toBe("error");
+    expect(history[0]).toMatchObject({ connectionId: "default", connectionName: "Default" });
   });
 
   it("renders an EXPLAIN plan returned as { plan, text }", async () => {

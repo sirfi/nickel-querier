@@ -302,6 +302,10 @@ export default function App() {
       return;
     }
 
+    const historyConnection = {
+      connectionId: activeTab.connectionId,
+      connectionName: connections.find((c) => c.id === activeTab.connectionId)?.name,
+    };
     const contextId = crypto.randomUUID();
     updateTabState(tabId, {
       isRunning: true,
@@ -330,6 +334,7 @@ export default function App() {
         duration_ms: Date.now() - start,
         row_count: res.metrics.result_count,
         status: "success",
+        ...historyConnection,
       };
       addHistory(entry);
       setHistory(loadHistory());
@@ -345,12 +350,13 @@ export default function App() {
         row_count: 0,
         status: "error",
         error: msg,
+        ...historyConnection,
       };
       addHistory(entry);
       setHistory(loadHistory());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeConnection, activeTabId, activeTab.paramValues, activeTab.scanConsistency]);
+  }, [activeConnection, activeTabId, activeTab.paramValues, activeTab.scanConsistency, activeTab.connectionId, connections]);
 
   // Context ids the user asked to cancel (read inside handleRun's catch).
   const cancelledRef = useRef<Set<string>>(new Set());
@@ -494,6 +500,7 @@ export default function App() {
               {sideTab === "history" && (
                 <QueryHistory
                   entries={history}
+                  currentConnectionId={activeTab.connectionId}
                   onSelect={handleHistorySelect}
                   onRefresh={() => setHistory(loadHistory())}
                 />
