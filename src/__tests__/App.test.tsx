@@ -237,3 +237,24 @@ describe("App — review fixes (PR #12)", () => {
     expect(document.activeElement).toBe(editor);
   });
 });
+
+describe("App plan diff", () => {
+  it("pins a plan and compares the next EXPLAIN against it", async () => {
+    getExplainPlan.mockResolvedValueOnce({
+      plan: { "#operator": "Sequence", "~children": [{ "#operator": "PrimaryScan3", index: "#primary" }] },
+    });
+    render(<App />);
+    fireEvent.click(screen.getAllByText("⚡ Explain")[0]);
+    fireEvent.click(await screen.findByText("📌 Pin as baseline"));
+
+    getExplainPlan.mockResolvedValueOnce({
+      plan: { "#operator": "Sequence", "~children": [{ "#operator": "IndexScan3", index: "idx_type" }] },
+    });
+    fireEvent.click(screen.getAllByText("⚡ Explain")[0]);
+    const table = await screen.findByRole("table", { name: "Plan differences" });
+    expect(table.textContent).toContain("PrimaryScan3");
+    expect(table.textContent).toContain("IndexScan3");
+    expect(screen.getByText("+1 added")).toBeTruthy();
+    expect(screen.getByText("−1 removed")).toBeTruthy();
+  });
+});
