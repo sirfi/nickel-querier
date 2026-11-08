@@ -22,6 +22,8 @@ interface Props {
   onRun: (statement: string) => void;
   /** Called with the selected text, or the whole editor content. */
   onExplain: (statement: string) => void;
+  /** Index Advisor for the active statement */
+  onAdvise?: (statement: string) => void;
   onSave: () => void;
   /** Present while a cancellable query is running. */
   onCancel?: () => void;
@@ -40,6 +42,7 @@ export default function QueryEditor({
   onChange,
   onRun,
   onExplain,
+  onAdvise,
   onSave,
   onCancel,
   isCancelling = false,
@@ -80,8 +83,8 @@ export default function QueryEditor({
   // Latest value / callbacks, read by Monaco commands registered once at mount.
   const valueRef = useRef(value);
   valueRef.current = value;
-  const callbacksRef = useRef({ onRun, onExplain, onSave, handleFormat, isRunning });
-  callbacksRef.current = { onRun, onExplain, onSave, handleFormat, isRunning };
+  const callbacksRef = useRef({ onRun, onExplain, onAdvise, onSave, handleFormat, isRunning });
+  callbacksRef.current = { onRun, onExplain, onAdvise, onSave, handleFormat, isRunning };
 
   /** Briefly highlight the range that is about to run. */
   const flashRange = (start: number, end: number) => {
@@ -136,6 +139,11 @@ export default function QueryEditor({
     callbacksRef.current.onExplain(getActiveStatement());
   }, [getActiveStatement]);
 
+  const advise = useCallback(() => {
+    if (callbacksRef.current.isRunning) return;
+    callbacksRef.current.onAdvise?.(getActiveStatement());
+  }, [getActiveStatement]);
+
   const handleMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
@@ -146,6 +154,11 @@ export default function QueryEditor({
     editor.addCommand(
       monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyE,
       explain
+    );
+    // Ctrl/Cmd + Shift + A for the Index Advisor
+    editor.addCommand(
+      monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyA,
+      advise
     );
     // Ctrl/Cmd + S to save
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () =>
@@ -249,6 +262,16 @@ export default function QueryEditor({
         >
           ⚡ Explain
         </button>
+        {onAdvise && (
+          <button
+            className="btn"
+            onClick={advise}
+            disabled={isRunning}
+            data-tooltip="Index Advisor (Ctrl+Shift+A)"
+          >
+            💡 Advise
+          </button>
+        )}
         <button
           className="btn"
           onClick={onSave}

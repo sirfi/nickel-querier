@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { BucketInfo, CollectionSchema, SchemaField, ConnectionConfig } from "../lib/types";
-import { listBuckets, getKeyspaceMetadata, inferSchema } from "../lib/commands";
+import { listBuckets, getKeyspaceMetadata, inferSchema, executeQuery } from "../lib/commands";
+import { IndexInfo, indexListQuery, describeIndex } from "../lib/indexes";
 import { KeyspaceRef, keyspaceId, sampleQuery } from "../lib/keyspace";
 import "./SchemaExplorer.css";
 
@@ -18,6 +19,7 @@ export default function SchemaExplorer({ config, onFieldsChange, onOpenQuery }: 
   const [buckets, setBuckets] = useState<BucketInfo[]>([]);
   const [schemas, setSchemas] = useState<Record<string, CollectionSchema[]>>({});
   const [fields, setFields] = useState<Record<string, SchemaField[]>>({});
+  const [indexes, setIndexes] = useState<Record<string, IndexInfo[] | string>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +46,7 @@ export default function SchemaExplorer({ config, onFieldsChange, onOpenQuery }: 
     setError(null);
     setSchemas({});
     setFields({});
+    setIndexes({});
     setItemErrors({});
     setExpanded(new Set());
     try {
@@ -98,6 +101,10 @@ export default function SchemaExplorer({ config, onFieldsChange, onOpenQuery }: 
     }
     if (force) setExpanded((prev) => new Set(prev).add(`c:${id}`));
     setBusyFlag(id, true);
+    // Index list loads in parallel; its failure must not hide the fields.
+    executeQuery(config, indexListQuery(ks))
+      .then((r) => setIndexes((prev) => ({ ...prev, [id]: r.results as IndexInfo[] })))
+      .catch((e) => setIndexes((prev) => ({ ...prev, [id]: errMsg(e) })));
     try {
       const fs = await inferSchema(config, ks);
       setFields((prev) => ({ ...prev, [id]: fs }));
@@ -221,6 +228,7 @@ export default function SchemaExplorer({ config, onFieldsChange, onOpenQuery }: 
                         {itemErrors[id] && <div className="se-item-error">{itemErrors[id]}</div>}
                         {expanded.has(cid) && fs && (
                           <ul className="se-fields">
+                            <li className="se-section">Fields</li>
                             {fs.length === 0 && <li className="se-field-empty">No fields inferred</li>}
                             {fs.map((f) => (
                               <li key={f.name} className="se-field" title={`${f.name}: ${f.field_type}`}>
@@ -228,6 +236,7 @@ export default function SchemaExplorer({ config, onFieldsChange, onOpenQuery }: 
                                 <span className="se-field-type">{f.field_type}</span>
                               </li>
                             ))}
+                            <IndexList value={indexes[id]} />
                           </ul>
                         )}
                       </li>
@@ -240,5 +249,32 @@ export default function SchemaExplorer({ config, onFieldsChange, onOpenQuery }: 
         })}
       </ul>
     </div>
+  );
+}
+
+function IndexList({ value }: { value: IndexInfo[] | string | undefined }) {
+  if (value === undefined) return null;
+  return (
+    <>
+      <li className="se-section">Indexes</li>
+      {typeof value === "string" ? (
+        <li className="se-item-error">{value}</li>
+      ) : value.length === 0 ? (
+        <li className="se-field-empty">No indexes — queries need a primary or secondary index</li>
+      ) : (
+        value.map((i) => (
+          <li key={i.name} className="se-field" title={`${i.name} ${describeIndex(i)}`}>
+            <span className="se-field-name">
+              {i.is_primary ? "⚿ " : "⌗ "}
+              {i.name}
+            </span>
+            <span className="se-field-type">
+              {describeIndex(i)}
+              {i.state && i.state !== "online" ? ` · ${i.state}` : ""}
+            </span>
+          </li>
+        ))
+      )}
+    </>
   );
 }

@@ -98,3 +98,11 @@
 .se-field-name { color: var(--text-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .se-field-type { color: var(--text-muted); flex-shrink: 0; }
 .se-field-empty { padding: 2px 10px; font-size: 11px; color: var(--text-muted); }
+.se-section {
+  padding: 6px 10px 2px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.se-field .se-field-type { max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -27,7 +27,7 @@ const fakeEditor = {
 
 const fakeMonaco = {
   KeyMod: { CtrlCmd: 1 << 11, Shift: 1 << 10 },
-  KeyCode: { Enter: 3, KeyE: 35, KeyS: 49, KeyF: 36 },
+  KeyCode: { Enter: 3, KeyE: 35, KeyS: 49, KeyF: 36, KeyA: 31 },
   languages: {
     getLanguages: () => [{ id: "n1ql" }],
     registerCompletionItemProvider: () => ({ dispose: () => {} }),

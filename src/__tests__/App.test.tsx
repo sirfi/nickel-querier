@@ -18,7 +18,7 @@ vi.mock("@monaco-editor/react", () => ({
           updateOptions: () => {},
           focus: () => {},
         },
-        { KeyMod: { CtrlCmd: 0, Shift: 0 }, KeyCode: { Enter: 0, KeyE: 0, KeyS: 0, KeyF: 0 } }
+        { KeyMod: { CtrlCmd: 0, Shift: 0 }, KeyCode: { Enter: 0, KeyE: 0, KeyS: 0, KeyF: 0, KeyA: 0 } }
       );
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -160,5 +160,20 @@ describe("App parameters", () => {
     fireEvent.click(screen.getByText("▶ Run"));
     expect(await screen.findByText("Missing value for parameter $x")).toBeTruthy();
     expect(executeQuery).not.toHaveBeenCalled();
+  });
+});
+
+describe("App index advisor", () => {
+  it("runs ADVISE and lets you open a recommended index in a new tab", async () => {
+    executeQuery.mockResolvedValue(okResult([
+      { advice: { adviseinfo: { recommended_indexes: { indexes: [{ index_statement: "CREATE INDEX adv ON `b`(`t`)" }] } } } },
+    ]));
+    render(<App />);
+    fireEvent.change(screen.getByTestId("editor"), { target: { value: "SELECT * FROM b WHERE t = 1;" } });
+    fireEvent.click(screen.getAllByText("💡 Advise")[0]);
+    expect(await screen.findByText("CREATE INDEX adv ON `b`(`t`)")).toBeTruthy();
+    expect(executeQuery.mock.calls[0][1].statement).toBe("ADVISE SELECT * FROM b WHERE t = 1");
+    fireEvent.click(screen.getByText("▶ Open in tab"));
+    expect((screen.getByTestId("editor") as HTMLTextAreaElement).value).toBe("CREATE INDEX adv ON `b`(`t`);");
   });
 });

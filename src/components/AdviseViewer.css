@@ -1,0 +1,19 @@
+.av-root { height: 100%; overflow: auto; padding: 12px; font-size: 12px; }
+.av-placeholder {
+  height: 100%; display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted); font-size: 13px; padding: 16px; text-align: center;
+}
+.av-heading { margin: 8px 0 6px; font-size: 12px; color: var(--text-secondary); }
+.av-message { color: var(--text-secondary); margin-bottom: 8px; }
+.av-card, .av-current {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 6px 8px; margin-bottom: 8px; background: var(--bg-panel);
+}
+.av-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.av-rule { color: var(--text-muted); font-size: 11px; }
+.av-stmt {
+  margin: 6px 0 0; font-family: var(--font-mono); font-size: 12px;
+  color: var(--text-primary); white-space: pre-wrap; word-break: break-word;
+}
+.av-error-title { color: var(--error); font-weight: 600; margin-bottom: 6px; }
+.av-error { font-family: var(--font-mono); white-space: pre-wrap; margin: 0; }

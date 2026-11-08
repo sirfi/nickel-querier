@@ -9,6 +9,8 @@ import SchemaExplorer from "./components/SchemaExplorer";
 import ExplainViewer from "./components/ExplainViewer";
 import ParamsPanel from "./components/ParamsPanel";
 import ResizeHandle from "./components/ResizeHandle";
+import AdviseViewer from "./components/AdviseViewer";
+import { adviseStatement, parseAdvice, type Advice } from "./lib/indexes";
 import { buildParams } from "./lib/params";
 import { migrateConnectionSecrets } from "./lib/secrets";
 
@@ -46,7 +48,7 @@ import {
 import "./styles/App.css";
 
 type SideTab = "schema" | "history" | "saved";
-type ResultTab = "results" | "explain";
+type ResultTab = "results" | "explain" | "advise";
 
 const DEFAULT_QUERY = `-- Welcome to Nickel Querier ⬡  SQL+++ for Couchbase
 -- Press Ctrl+Enter (or ⌘+Enter) to run · Ctrl+Shift+E for EXPLAIN
@@ -77,6 +79,9 @@ interface TabState {
   explainPlan: unknown;
   explainError: string | null;
   isExplaining: boolean;
+  advice: Advice | null;
+  adviseError: string | null;
+  isAdvising: boolean;
   resultTab: ResultTab;
   schemaFields: SchemaField[];
 }
@@ -91,6 +96,9 @@ function emptyTabState(): TabState {
     explainPlan: null,
     explainError: null,
     isExplaining: false,
+    advice: null,
+    adviseError: null,
+    isAdvising: false,
     resultTab: "results",
     schemaFields: [],
   };
@@ -383,6 +391,23 @@ export default function App() {
     }
   }, [activeConnection, activeTabId]);
 
+  const handleAdvise = useCallback(async (statement: string) => {
+    const stmt = statement.trim();
+    if (!stmt) return;
+    const tabId = activeTabId;
+    updateTabState(tabId, { isAdvising: true, advice: null, adviseError: null, resultTab: "advise" });
+    try {
+      const res = await executeQuery(activeConnection, { statement: adviseStatement(stmt), timeout: "30s" });
+      updateTabState(tabId, { advice: parseAdvice(res.results), isAdvising: false });
+    } catch (e: unknown) {
+      updateTabState(tabId, {
+        adviseError: e instanceof Error ? e.message : String(e),
+        isAdvising: false,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeConnection, activeTabId]);
+
   const handleSaveQuery = () => {
     setSideTab("saved");
     setSideOpen(true);
@@ -521,6 +546,7 @@ export default function App() {
               onChange={(q) => updateActiveTab({ query: q })}
               onRun={handleRun}
               onExplain={handleExplain}
+              onAdvise={handleAdvise}
               onCancel={activeState.isRunning ? handleCancel : undefined}
               isCancelling={activeState.cancelRequested}
               scanConsistency={activeTab.scanConsistency ?? "not_bounded"}
@@ -533,7 +559,7 @@ export default function App() {
                 />
               }
               onSave={handleSaveQuery}
-              isRunning={activeState.isRunning || activeState.isExplaining}
+              isRunning={activeState.isRunning || activeState.isExplaining || activeState.isAdvising}
               schemaFields={activeState.schemaFields}
               monacoTheme={theme === "light" ? "nickel-light" : "nickel-dark"}
             />
@@ -577,6 +603,15 @@ export default function App() {
               >
                 ⚡ Explain
               </button>
+              <button
+                className={`result-tab ${activeState.resultTab === "advise" ? "active" : ""}`}
+                onClick={() => updateTabState(activeTabId, { resultTab: "advise" })}
+              >
+                💡 Advise
+                {activeState.advice && activeState.advice.recommended.length > 0 && (
+                  <span className="result-tab-count">{activeState.advice.recommended.length}</span>
+                )}
+              </button>
             </div>
             <div className="result-body">
               {activeState.resultTab === "results" && (
@@ -593,6 +628,14 @@ export default function App() {
                   plan={activeState.explainPlan}
                   error={activeState.explainError}
                   isLoading={activeState.isExplaining}
+                />
+              )}
+              {activeState.resultTab === "advise" && (
+                <AdviseViewer
+                  advice={activeState.advice}
+                  error={activeState.adviseError}
+                  isLoading={activeState.isAdvising}
+                  onOpen={(stmt) => handleAddTab(stmt)}
                 />
               )}
             </div>
