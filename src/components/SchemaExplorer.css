@@ -63,3 +63,38 @@
 .se-coll-icon { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
 .se-coll-name { font-size: 12px; color: var(--text-secondary); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .se-inferring { font-size: 11px; color: var(--warning); }
+
+.se-filter { padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.se-filter .input { width: 100%; font-size: 12px; }
+
+.se-item-error {
+  font-size: 11px;
+  color: var(--error);
+  padding: 2px 14px 4px 30px;
+  word-break: break-word;
+}
+
+.se-action {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 0 3px;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.se-collection:hover .se-action { opacity: 1; }
+.se-action:hover { color: var(--accent); }
+
+.se-fields { list-style: none; padding-left: 26px; }
+.se-field {
+  display: flex;
+  gap: 6px;
+  padding: 2px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.se-field-name { color: var(--text-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.se-field-type { color: var(--text-muted); flex-shrink: 0; }
+.se-field-empty { padding: 2px 10px; font-size: 11px; color: var(--text-muted); }

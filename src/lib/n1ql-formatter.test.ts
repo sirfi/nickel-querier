@@ -59,3 +59,61 @@ describe("formatN1QL", () => {
     expect(result).toContain("FROM");
   });
 });
+
+describe("formatN1QL — regressions", () => {
+  it("never moves comment text into code", () => {
+    const input = "-- Press Ctrl+Shift+E for EXPLAIN\nselect 1";
+    const out = formatN1QL(input);
+    expect(out.split("\n")[0]).toBe("-- Press Ctrl+Shift+E for EXPLAIN");
+    expect(out).toContain("SELECT 1");
+  });
+
+  it("leaves block comments untouched", () => {
+    const out = formatN1QL("/* select from where */ select 1");
+    expect(out).toContain("/* select from where */");
+  });
+
+  it("does not uppercase field names that look like keywords", () => {
+    const out = formatN1QL("select d.first, d.`key`, d.index, d.value from b d");
+    expect(out).toContain("d.first");
+    expect(out).toContain("d.index");
+    expect(out).toContain("d.value");
+  });
+
+  it("does not uppercase object keys", () => {
+    expect(formatN1QL('select {"a": 1} from b')).toContain('{ "a": 1 }');
+  });
+
+  it("keeps multi-word clauses together", () => {
+    const out = formatN1QL("delete from b where x = 1");
+    expect(out.split("\n")[0]).toBe("DELETE FROM b");
+    const join = formatN1QL("select a from b left outer join c on a.x = c.y");
+    expect(join).toContain("\nLEFT OUTER JOIN c ON a.x = c.y");
+    expect(formatN1QL("select a from b order by a desc")).toContain("\nORDER BY a DESC");
+  });
+
+  it("indents sub-queries", () => {
+    const out = formatN1QL("select * from b where x in (select raw y from c)");
+    expect(out).toContain("IN (\n  SELECT RAW y\n  FROM c)");
+  });
+
+  it("keeps function calls and META() tight", () => {
+    const out = formatN1QL("select meta(b).id, count(*) from b");
+    expect(out).toContain("meta(b).id, count(*)");
+  });
+
+  it("is idempotent", () => {
+    const once = formatN1QL("select a, b from `x` where a = 'q' and b > 2 order by a limit 5;");
+    expect(formatN1QL(once)).toBe(once);
+  });
+
+  it("keeps escaped quotes inside strings", () => {
+    const out = formatN1QL("select 'it''s from' as x");
+    expect(out).toContain("'it''s from'");
+  });
+
+  it("separates multiple statements", () => {
+    const out = formatN1QL("select 1; select 2");
+    expect(out).toBe("SELECT 1;\n\nSELECT 2");
+  });
+});

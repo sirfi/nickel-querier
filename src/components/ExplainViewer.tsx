@@ -1,16 +1,40 @@
 import { useState } from "react";
+import {
+  PlanNode as PlanNodeType,
+  extractPlanRoot,
+  extractChildren,
+  getDetails,
+  operatorColor,
+  usesPrimaryScan,
+} from "../lib/explain";
 import "./ExplainViewer.css";
 
 interface Props {
   plan: unknown;
+  isLoading?: boolean;
+  error?: string | null;
 }
 
-type NodeOp = {
-  "#operator": string;
-  [key: string]: unknown;
-};
+type ViewMode = "tree" | "json";
 
-export default function ExplainViewer({ plan }: Props) {
+export default function ExplainViewer({ plan, isLoading, error }: Props) {
+  const [mode, setMode] = useState<ViewMode>("tree");
+
+  if (isLoading) {
+    return <div className="ev-placeholder">Building query plan…</div>;
+  }
+
+  if (error) {
+    return (
+      <div className="ev-placeholder ev-error">
+        <div>
+          <div className="ev-error-title">✕ EXPLAIN failed</div>
+          <pre className="ev-error-body">{error}</pre>
+        </div>
+      </div>
+    );
+  }
+
   if (!plan) {
     return (
       <div className="ev-placeholder">
@@ -19,14 +43,47 @@ export default function ExplainViewer({ plan }: Props) {
     );
   }
 
+  const root = extractPlanRoot(plan);
+  const text =
+    typeof plan === "object" && plan !== null && "text" in plan
+      ? String((plan as { text: unknown }).text)
+      : null;
+
   return (
     <div className="ev-root">
       <div className="ev-header">
         <span>EXPLAIN Plan</span>
-        <span className="ev-hint">Expand nodes to see details</span>
+        <span className="ev-header-right">
+          {root && usesPrimaryScan(root) && (
+            <span
+              className="badge badge-warning"
+              title="A PrimaryScan reads every document. Consider a secondary index."
+            >
+              ⚠ PrimaryScan
+            </span>
+          )}
+          <span className="rv-view-toggle">
+            {(["tree", "json"] as ViewMode[]).map((m) => (
+              <button
+                key={m}
+                className={`rv-tab ${mode === m ? "active" : ""}`}
+                onClick={() => setMode(m)}
+              >
+                {m === "tree" ? "⊵ Tree" : "{ } JSON"}
+              </button>
+            ))}
+          </span>
+        </span>
       </div>
       <div className="ev-body">
-        <PlanNode node={plan as NodeOp} depth={0} defaultOpen />
+        {mode === "tree" && root ? (
+          <>
+            {text && <div className="ev-text" title="Statement">{text}</div>}
+            <PlanNode node={root} depth={0} defaultOpen />
+          </>
+        ) : (
+          <pre className="ev-json">{JSON.stringify(plan, null, 2)}</pre>
+        )}
       </div>
     </div>
   );
@@ -37,14 +94,14 @@ function PlanNode({
   depth,
   defaultOpen,
 }: {
-  node: NodeOp;
+  node: PlanNodeType;
   depth: number;
   defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen ?? depth < 2);
+  const [open, setOpen] = useState(defaultOpen ?? depth < 6);
 
-  const operator = node["#operator"] ?? "Operator";
-  const children: NodeOp[] = extractChildren(node);
+  const operator = String(node["#operator"] ?? "Operator");
+  const children = extractChildren(node);
   const details = getDetails(node);
   const hasChildren = children.length > 0;
 
@@ -54,12 +111,8 @@ function PlanNode({
         className={`pn-header ${hasChildren ? "pn-clickable" : ""}`}
         onClick={() => hasChildren && setOpen(!open)}
       >
-        {hasChildren && (
-          <span className="pn-chevron">{open ? "▾" : "▸"}</span>
-        )}
-        <span className={`pn-operator pn-op-${operatorColor(String(operator))}`}>
-          {String(operator)}
-        </span>
+        {hasChildren && <span className="pn-chevron">{open ? "▾" : "▸"}</span>}
+        <span className={`pn-operator pn-op-${operatorColor(operator)}`}>{operator}</span>
         {details.map(([k, v]) => (
           <span key={k} className="pn-detail">
             <span className="pn-detail-key">{k}=</span>
@@ -77,54 +130,4 @@ function PlanNode({
       )}
     </div>
   );
-}
-
-function extractChildren(node: NodeOp): NodeOp[] {
-  const children: NodeOp[] = [];
-  for (const key of [
-    "~children",
-    "input",
-    "first",
-    "second",
-    "inputs",
-  ]) {
-    const v = node[key];
-    if (Array.isArray(v)) {
-      children.push(...(v as NodeOp[]));
-    } else if (v && typeof v === "object" && "#operator" in (v as object)) {
-      children.push(v as NodeOp);
-    }
-  }
-  return children;
-}
-
-const SKIP_KEYS = new Set([
-  "#operator",
-  "~children",
-  "input",
-  "first",
-  "second",
-  "inputs",
-  "#stats",
-]);
-
-function getDetails(node: NodeOp): [string, string][] {
-  return Object.entries(node)
-    .filter(([k]) => !SKIP_KEYS.has(k))
-    .slice(0, 5)
-    .map(([k, v]) => [
-      k,
-      typeof v === "object" ? JSON.stringify(v).slice(0, 60) : String(v),
-    ]);
-}
-
-function operatorColor(op: string): string {
-  const op2 = op.toUpperCase();
-  if (op2.includes("SCAN") || op2.includes("FETCH")) return "scan";
-  if (op2.includes("JOIN") || op2.includes("NEST")) return "join";
-  if (op2.includes("FILTER") || op2.includes("WHERE")) return "filter";
-  if (op2.includes("ORDER") || op2.includes("SORT")) return "sort";
-  if (op2.includes("INSERT") || op2.includes("UPDATE") || op2.includes("DELETE")) return "mutate";
-  if (op2.includes("AGGREGATE") || op2.includes("GROUP")) return "aggregate";
-  return "default";
 }

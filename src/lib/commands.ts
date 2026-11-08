@@ -9,14 +9,43 @@ import {
   CollectionSchema,
   SchemaField,
 } from "./types";
+import type { KeyspaceRef } from "./keyspace";
 
 // Detect whether we're running inside Tauri or a plain browser
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
+/**
+ * Rust `AppError` values are serialized as `{ "Query": "msg" }` etc.
+ * Turn them (or any other rejection) into a readable message.
+ */
+export function formatCommandError(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  if (e && typeof e === "object") {
+    const entries = Object.entries(e as Record<string, unknown>);
+    if (entries.length === 1) {
+      const [kind, msg] = entries[0];
+      const label: Record<string, string> = {
+        Http: "HTTP error",
+        Query: "Query error",
+        Connection: "Connection error",
+        Json: "Invalid response",
+      };
+      return `${label[kind] ?? kind}: ${typeof msg === "string" ? msg : JSON.stringify(msg)}`;
+    }
+    return JSON.stringify(e);
+  }
+  return String(e);
+}
+
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (isTauri) {
     const { invoke: tauriInvoke } = await import("@tauri-apps/api/core");
-    return tauriInvoke<T>(cmd, args);
+    try {
+      return await tauriInvoke<T>(cmd, args);
+    } catch (e) {
+      throw new Error(formatCommandError(e));
+    }
   }
   // Browser/dev fallback — call via HTTP (useful when running `npm run dev` standalone)
   throw new Error(
@@ -53,9 +82,14 @@ export async function getKeyspaceMetadata(
 
 export async function inferSchema(
   config: ConnectionConfig,
-  keyspace: string
+  keyspace: KeyspaceRef
 ): Promise<SchemaField[]> {
-  return invoke<SchemaField[]>("infer_schema", { config, keyspace });
+  return invoke<SchemaField[]>("infer_schema", {
+    config,
+    bucket: keyspace.bucket,
+    scope: keyspace.scope,
+    collection: keyspace.collection,
+  });
 }
 
 export async function testConnection(

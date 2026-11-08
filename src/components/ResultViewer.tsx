@@ -1,11 +1,21 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { QueryResult } from "../lib/types";
 import { JsonView } from "react-json-view-lite";
+import {
+  Row,
+  SortDirection,
+  toRows,
+  collectColumns,
+  filterRows,
+  sortRows,
+  toCsv,
+  toTsv,
+  truncate,
+} from "../lib/result-utils";
 import "react-json-view-lite/dist/index.css";
 import "./ResultViewer.css";
 
 type ViewMode = "table" | "json" | "tree";
-type SortDirection = "asc" | "desc";
 
 interface Props {
   result: QueryResult | null;
@@ -13,25 +23,13 @@ interface Props {
   isLoading: boolean;
 }
 
+const PAGE_SIZE = 100;
+const EMPTY_ROWS: Row[] = [];
+
 // ---------- Export helpers ----------
 
-function exportJson(rows: unknown[]): void {
-  const blob = new Blob([JSON.stringify(rows, null, 2)], { type: "application/json" });
-  triggerDownload(blob, "results.json");
-}
-
-function exportCsv(rows: Record<string, unknown>[], columns: string[]): void {
-  const escape = (v: unknown): string => {
-    const s = v === null || v === undefined ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
-    return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const header = columns.map(escape).join(",");
-  const body = rows.map((row) => columns.map((c) => escape(row[c])).join(",")).join("\n");
-  const blob = new Blob([header + "\n" + body], { type: "text/csv" });
-  triggerDownload(blob, "results.csv");
-}
-
-function triggerDownload(blob: Blob, filename: string): void {
+function triggerDownload(content: string, type: string, filename: string): void {
+  const blob = new Blob([content], { type });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -39,7 +37,16 @@ function triggerDownload(blob: Blob, filename: string): void {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export default function ResultViewer({ result, error, isLoading }: Props) {
@@ -48,7 +55,24 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<SortDirection>("asc");
   const [filterText, setFilterText] = useState("");
-  const PAGE_SIZE = 100;
+  const [copied, setCopied] = useState<string | null>(null);
+
+  // All hooks must run on every render — keep them above the early returns.
+  const allRows = useMemo(() => (result ? toRows(result.results) : EMPTY_ROWS), [result]);
+  const columns = useMemo(() => collectColumns(allRows), [allRows]);
+
+  const processedRows = useMemo(
+    () => sortRows(filterRows(allRows, filterText), sortColumn, sortDir),
+    [allRows, filterText, sortColumn, sortDir]
+  );
+
+  // A new result invalidates paging / sort / filter of the previous one.
+  useEffect(() => {
+    setPage(0);
+    setFilterText("");
+    setSortColumn(null);
+    setSortDir("asc");
+  }, [result]);
 
   if (isLoading) {
     return (
@@ -77,9 +101,6 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
     );
   }
 
-  const allRows = result.results as Record<string, unknown>[];
-  const columns = allRows.length > 0 ? Object.keys(allRows[0] ?? {}) : [];
-
   const handleSort = (col: string) => {
     if (sortColumn === col) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -95,33 +116,15 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
     setPage(0);
   };
 
-  const processedRows = useMemo(() => {
-    let rows = allRows;
-
-    if (filterText.trim()) {
-      const lower = filterText.toLowerCase();
-      rows = rows.filter((row) =>
-        Object.values(row).some((v) =>
-          String(v === null || v === undefined ? "" : typeof v === "object" ? JSON.stringify(v) : v)
-            .toLowerCase()
-            .includes(lower)
-        )
-      );
+  const rawResults = result.results;
+  const handleCopy = async (kind: "json" | "tsv") => {
+    const text =
+      kind === "json" ? JSON.stringify(rawResults, null, 2) : toTsv(processedRows, columns);
+    if (await copyText(text)) {
+      setCopied(kind);
+      setTimeout(() => setCopied(null), 1500);
     }
-
-    if (sortColumn) {
-      rows = [...rows].sort((a, b) => {
-        const av = a[sortColumn];
-        const bv = b[sortColumn];
-        const aStr = av === null || av === undefined ? "" : typeof av === "object" ? JSON.stringify(av) : String(av);
-        const bStr = bv === null || bv === undefined ? "" : typeof bv === "object" ? JSON.stringify(bv) : String(bv);
-        const cmp = aStr.localeCompare(bStr, undefined, { numeric: true, sensitivity: "base" });
-        return sortDir === "asc" ? cmp : -cmp;
-      });
-    }
-
-    return rows;
-  }, [allRows, filterText, sortColumn, sortDir]);
+  };
 
   const totalPages = Math.max(1, Math.ceil(processedRows.length / PAGE_SIZE));
   const pageRows = processedRows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -145,7 +148,14 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
       {result.warnings.length > 0 && (
         <>
           <span>•</span>
-          <span className="badge badge-warning">{result.warnings.length} warnings</span>
+          <span
+            className="badge badge-warning"
+            title={result.warnings
+              .map((w) => (w as { msg?: string }).msg ?? JSON.stringify(w))
+              .join("\n")}
+          >
+            {result.warnings.length} warnings
+          </span>
         </>
       )}
     </div>
@@ -155,18 +165,33 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
     <div className="rv-export">
       <button
         className="btn btn-ghost rv-export-btn"
-        onClick={() => exportJson(allRows)}
+        onClick={() => triggerDownload(JSON.stringify(rawResults, null, 2), "application/json", "results.json")}
         data-tooltip="Download as JSON"
       >
         ↓ JSON
       </button>
       <button
         className="btn btn-ghost rv-export-btn"
-        onClick={() => exportCsv(allRows, columns)}
+        onClick={() => triggerDownload(toCsv(processedRows, columns), "text/csv", "results.csv")}
         data-tooltip="Download as CSV"
         disabled={columns.length === 0}
       >
         ↓ CSV
+      </button>
+      <button
+        className="btn btn-ghost rv-export-btn"
+        onClick={() => handleCopy("tsv")}
+        data-tooltip="Copy visible rows (tab separated, paste into a spreadsheet)"
+        disabled={columns.length === 0}
+      >
+        {copied === "tsv" ? "✓ Copied" : "⧉ Copy"}
+      </button>
+      <button
+        className="btn btn-ghost rv-export-btn"
+        onClick={() => handleCopy("json")}
+        data-tooltip="Copy results as JSON"
+      >
+        {copied === "json" ? "✓ Copied" : "⧉ JSON"}
       </button>
     </div>
   );
@@ -174,13 +199,6 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
   const renderTable = () => {
     if (allRows.length === 0) {
       return <div className="rv-no-rows">No rows returned.</div>;
-    }
-    if (columns.length === 0) {
-      return (
-        <div className="rv-json-container">
-          <JsonView data={allRows} />
-        </div>
-      );
     }
     return (
       <div className="rv-table-wrapper">
@@ -257,7 +275,7 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
   const renderJson = () => (
     <div className="rv-json-container">
       <pre className="rv-json-raw">
-        {JSON.stringify(allRows, null, 2)}
+        {JSON.stringify(rawResults, null, 2)}
       </pre>
     </div>
   );
@@ -265,7 +283,7 @@ export default function ResultViewer({ result, error, isLoading }: Props) {
   const renderTree = () => (
     <div className="rv-json-container rv-tree">
       <JsonView
-        data={allRows}
+        data={rawResults}
         style={{
           container: "rv-json-view",
           basicChildStyle: "rv-json-child",
@@ -325,8 +343,8 @@ function CellValue({ value }: { value: unknown }) {
   if (typeof value === "string") return <span className="cell-string">{value}</span>;
   if (typeof value === "object")
     return (
-      <span className="cell-object" title={JSON.stringify(value)}>
-        {JSON.stringify(value).slice(0, 60)}…
+      <span className="cell-object" title={JSON.stringify(value, null, 2)}>
+        {truncate(JSON.stringify(value), 80)}
       </span>
     );
   return <span>{String(value)}</span>;

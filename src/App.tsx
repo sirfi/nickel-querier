@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import ConnectionPanel from "./components/ConnectionPanel";
 import QueryEditor from "./components/QueryEditor";
 import QueryTabs from "./components/QueryTabs";
@@ -60,6 +60,7 @@ interface TabState {
   queryError: string | null;
   isRunning: boolean;
   explainPlan: unknown;
+  explainError: string | null;
   isExplaining: boolean;
   resultTab: ResultTab;
   schemaFields: SchemaField[];
@@ -71,6 +72,7 @@ function emptyTabState(): TabState {
     queryError: null,
     isRunning: false,
     explainPlan: null,
+    explainError: null,
     isExplaining: false,
     resultTab: "results",
     schemaFields: [],
@@ -123,8 +125,6 @@ export default function App() {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [savedQueries, setSavedQueries] = useState<SavedQuery[]>([]);
 
-  const editorRootRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
     setHistory(loadHistory());
     setSavedQueries(loadSavedQueries());
@@ -164,28 +164,25 @@ export default function App() {
     setActiveTabId(id);
   };
 
-  const handleAddTab = () => {
+  const handleAddTab = (query?: string) => {
     // New tab inherits the last active connection
     const connId = activeTab.connectionId;
     saveLastConnectionId(connId);
-    const newTab = makeTab(connId);
+    const newTab = makeTab(connId, query ?? "");
     setTabs((prev) => [...prev, newTab]);
     setTabStates((prev) => ({ ...prev, [newTab.id]: emptyTabState() }));
     setActiveTabId(newTab.id);
   };
 
   const handleCloseTab = (id: string) => {
-    setTabs((prev) => {
-      const remaining = prev.filter((t) => t.id !== id);
-      if (remaining.length === 0) return prev; // shouldn't happen
-      if (activeTabId === id) {
-        // Activate a neighbour
-        const idx = prev.findIndex((t) => t.id === id);
-        const next = remaining[Math.min(idx, remaining.length - 1)];
-        setActiveTabId(next.id);
-      }
-      return remaining;
-    });
+    if (tabs.length <= 1) return;
+    const idx = tabs.findIndex((t) => t.id === id);
+    const remaining = tabs.filter((t) => t.id !== id);
+    if (activeTabId === id) {
+      // Activate a neighbour
+      setActiveTabId(remaining[Math.min(idx, remaining.length - 1)].id);
+    }
+    setTabs(remaining);
     setTabStates((prev) => {
       const updated = { ...prev };
       delete updated[id];
@@ -201,18 +198,8 @@ export default function App() {
   };
 
   // ---------- Query execution ----------
-  const getActiveStatement = useCallback((): string => {
-    const el = editorRootRef.current;
-    if (el) {
-      const fn = (el as HTMLElement & { getActiveStatement?: () => string })
-        .getActiveStatement;
-      if (fn) return fn();
-    }
-    return activeTab.query;
-  }, [activeTab.query]);
-
-  const handleRun = useCallback(async () => {
-    const stmt = getActiveStatement().trim();
+  const handleRun = useCallback(async (statement: string) => {
+    const stmt = statement.trim();
     if (!stmt) return;
     const tabId = activeTabId;
 
@@ -256,16 +243,17 @@ export default function App() {
       addHistory(entry);
       setHistory(loadHistory());
     }
-  }, [activeConnection, activeTabId, getActiveStatement]);
+  }, [activeConnection, activeTabId]);
 
-  const handleExplain = useCallback(async () => {
-    const stmt = getActiveStatement().trim();
+  const handleExplain = useCallback(async (statement: string) => {
+    const stmt = statement.trim();
     if (!stmt) return;
     const tabId = activeTabId;
 
     updateTabState(tabId, {
       isExplaining: true,
       explainPlan: null,
+      explainError: null,
       resultTab: "explain",
     });
 
@@ -274,11 +262,11 @@ export default function App() {
       updateTabState(tabId, { explainPlan: plan, isExplaining: false });
     } catch (e: unknown) {
       updateTabState(tabId, {
-        explainPlan: { error: e instanceof Error ? e.message : String(e) },
+        explainError: e instanceof Error ? e.message : String(e),
         isExplaining: false,
       });
     }
-  }, [activeConnection, activeTabId, getActiveStatement]);
+  }, [activeConnection, activeTabId]);
 
   const handleSaveQuery = () => {
     setSideTab("saved");
@@ -360,9 +348,7 @@ export default function App() {
                   onFieldsChange={(fields) =>
                     updateTabState(activeTabId, { schemaFields: fields })
                   }
-                  onKeyspaceSelect={(ks) => {
-                    updateActiveTab({ query: `SELECT * FROM \`${ks}\` LIMIT 10;` });
-                  }}
+                  onOpenQuery={(stmt) => handleAddTab(stmt)}
                 />
               )}
               {sideTab === "history" && (
@@ -393,12 +379,12 @@ export default function App() {
             connections={connections}
             onSelect={handleSelectTab}
             onClose={handleCloseTab}
-            onAdd={handleAddTab}
+            onAdd={() => handleAddTab()}
             onConnectionChange={handleTabConnectionChange}
           />
 
           {/* Editor pane */}
-          <div className="app-editor-pane" ref={editorRootRef}>
+          <div className="app-editor-pane">
             <QueryEditor
               key={activeTabId}
               value={activeTab.query}
@@ -443,6 +429,7 @@ export default function App() {
             <div className="result-body">
               {activeState.resultTab === "results" && (
                 <ResultViewer
+                  key={activeTabId}
                   result={activeState.result}
                   error={activeState.queryError}
                   isLoading={activeState.isRunning}
@@ -450,7 +437,10 @@ export default function App() {
               )}
               {activeState.resultTab === "explain" && (
                 <ExplainViewer
-                  plan={activeState.isExplaining ? null : activeState.explainPlan}
+                  key={activeTabId}
+                  plan={activeState.explainPlan}
+                  error={activeState.explainError}
+                  isLoading={activeState.isExplaining}
                 />
               )}
             </div>
