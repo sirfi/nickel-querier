@@ -10,6 +10,8 @@ import {
   EDITOR_FONT_SIZE_MAX,
 } from "../lib/storage";
 import type * as MonacoType from "monaco-editor";
+import type { ReactNode } from "react";
+import type { ScanConsistency } from "../lib/types";
 import "./QueryEditor.css";
 
 interface Props {
@@ -26,6 +28,10 @@ interface Props {
   isRunning: boolean;
   schemaFields: SchemaField[];
   monacoTheme?: string;
+  scanConsistency?: ScanConsistency;
+  onScanConsistencyChange?: (value: ScanConsistency) => void;
+  /** Rendered between the toolbar and the editor (e.g. the parameters panel). */
+  belowToolbar?: ReactNode;
 }
 
 export default function QueryEditor({
@@ -39,6 +45,9 @@ export default function QueryEditor({
   isRunning,
   schemaFields,
   monacoTheme = "nickel-dark",
+  scanConsistency = "not_bounded",
+  onScanConsistencyChange,
+  belowToolbar,
 }: Props) {
   const editorRef = useRef<MonacoType.editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<typeof MonacoType | null>(null);
@@ -240,10 +249,23 @@ export default function QueryEditor({
             A+
           </button>
         </div>
+        {onScanConsistencyChange && (
+          <select
+            className="qe-select"
+            value={scanConsistency}
+            onChange={(e) => onScanConsistencyChange(e.target.value as ScanConsistency)}
+            data-tooltip="Scan consistency: request_plus waits for indexes to include all prior mutations"
+            aria-label="Scan consistency"
+          >
+            <option value="not_bounded">not_bounded</option>
+            <option value="request_plus">request_plus</option>
+          </select>
+        )}
         <span className="qe-hint">
           Tip: Select text then Run to execute a sub-query
         </span>
       </div>
+      {belowToolbar}
       <div className="qe-monaco">
         <MonacoEditor
           height="100%"

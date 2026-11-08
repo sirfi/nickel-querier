@@ -104,4 +104,7 @@ export interface QueryTab {
   label: string;
   query: string;
   connectionId: string;
+  /** Input values for $1 / $name parameters, keyed "$1" / "$name" */
+  paramValues?: Record<string, string>;
+  scanConsistency?: ScanConsistency;
 }

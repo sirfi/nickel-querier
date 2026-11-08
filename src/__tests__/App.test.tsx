@@ -133,3 +133,29 @@ describe("App tab persistence", () => {
     expect((screen.getByTestId("editor") as HTMLTextAreaElement).value).toBe("SELECT 'kept'");
   });
 });
+
+describe("App parameters", () => {
+  it("sends parameter values and scan consistency", async () => {
+    executeQuery.mockResolvedValue(okResult([]));
+    render(<App />);
+    fireEvent.change(screen.getByTestId("editor"), { target: { value: "SELECT $1, $city" } });
+    fireEvent.change(screen.getByLabelText("Scan consistency"), { target: { value: "request_plus" } });
+    const inputs = screen.getAllByPlaceholderText("value");
+    fireEvent.change(inputs[0], { target: { value: "42" } });
+    fireEvent.change(inputs[1], { target: { value: "Paris" } });
+    fireEvent.click(screen.getByText("▶ Run"));
+    await waitFor(() => expect(executeQuery).toHaveBeenCalled());
+    const req = executeQuery.mock.calls[0][1];
+    expect(req.parameters).toEqual([42]);
+    expect(req.named_parameters).toEqual({ city: "Paris" });
+    expect(req.scan_consistency).toBe("request_plus");
+  });
+
+  it("refuses to run with a missing parameter value", async () => {
+    render(<App />);
+    fireEvent.change(screen.getByTestId("editor"), { target: { value: "SELECT $x" } });
+    fireEvent.click(screen.getByText("▶ Run"));
+    expect(await screen.findByText("Missing value for parameter $x")).toBeTruthy();
+    expect(executeQuery).not.toHaveBeenCalled();
+  });
+});

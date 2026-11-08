@@ -7,6 +7,8 @@ import QueryHistory from "./components/QueryHistory";
 import SavedQueries from "./components/SavedQueries";
 import SchemaExplorer from "./components/SchemaExplorer";
 import ExplainViewer from "./components/ExplainViewer";
+import ParamsPanel from "./components/ParamsPanel";
+import { buildParams } from "./lib/params";
 
 import { executeQuery, getExplainPlan, cancelQuery } from "./lib/commands";
 import {
@@ -242,6 +244,12 @@ export default function App() {
     if (!stmt) return;
     const tabId = activeTabId;
 
+    const params = buildParams(stmt, activeTab.paramValues ?? {});
+    if (!params.ok) {
+      updateTabState(tabId, { queryError: params.error, result: null, resultTab: "results" });
+      return;
+    }
+
     const contextId = crypto.randomUUID();
     updateTabState(tabId, {
       isRunning: true,
@@ -257,7 +265,9 @@ export default function App() {
       const res = await executeQuery(activeConnection, {
         statement: stmt,
         timeout: "60s",
-        scan_consistency: "not_bounded",
+        scan_consistency: activeTab.scanConsistency ?? "not_bounded",
+        parameters: params.parameters,
+        named_parameters: params.named_parameters,
         client_context_id: contextId,
       });
       updateTabState(tabId, { result: res, isRunning: false, runningContextId: null });
@@ -287,7 +297,8 @@ export default function App() {
       addHistory(entry);
       setHistory(loadHistory());
     }
-  }, [activeConnection, activeTabId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeConnection, activeTabId, activeTab.paramValues, activeTab.scanConsistency]);
 
   // Context ids the user asked to cancel (read inside handleRun's catch).
   const cancelledRef = useRef<Set<string>>(new Set());
@@ -453,6 +464,15 @@ export default function App() {
               onExplain={handleExplain}
               onCancel={activeState.isRunning ? handleCancel : undefined}
               isCancelling={activeState.cancelRequested}
+              scanConsistency={activeTab.scanConsistency ?? "not_bounded"}
+              onScanConsistencyChange={(v) => updateActiveTab({ scanConsistency: v })}
+              belowToolbar={
+                <ParamsPanel
+                  statement={activeTab.query}
+                  values={activeTab.paramValues ?? {}}
+                  onChange={(paramValues) => updateActiveTab({ paramValues })}
+                />
+              }
               onSave={handleSaveQuery}
               isRunning={activeState.isRunning || activeState.isExplaining}
               schemaFields={activeState.schemaFields}

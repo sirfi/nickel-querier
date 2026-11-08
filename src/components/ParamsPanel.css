@@ -1,0 +1,31 @@
+.pp-root {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 6px 12px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.pp-title {
+  color: var(--text-secondary);
+  font-weight: 600;
+  cursor: help;
+}
+.pp-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.pp-name {
+  font-family: var(--font-mono);
+  color: var(--warning);
+}
+.pp-input {
+  width: 140px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 2px 6px;
+}
+.pp-empty { border-color: var(--warning); }

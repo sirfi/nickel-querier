@@ -193,7 +193,9 @@ export function loadTabs(): StoredTabs | null {
 
 export function saveTabs(tabs: QueryTab[], activeTabId: string): void {
   save<StoredTabs>(TABS_KEY, {
-    tabs: tabs.map(({ id, label, query, connectionId }) => ({ id, label, query, connectionId })),
+    tabs: tabs.map(({ id, label, query, connectionId, paramValues, scanConsistency }) => ({
+      id, label, query, connectionId, paramValues, scanConsistency,
+    })),
     activeTabId,
   });
 }
