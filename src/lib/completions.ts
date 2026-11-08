@@ -58,3 +58,32 @@ export function extendForBacktick(
     endColumn: closes ? wordEndColumn + 1 : wordEndColumn,
   };
 }
+
+/**
+ * Where a field suggestion should start replacing, as an offset into the
+ * dotted path typed before the cursor (e.g. `d.geo.la`).
+ *
+ * Nested fields are suggested as dotted paths (`geo.lat`). If the typed path
+ * already contains a leading part of the suggestion (`geo.`), that part is
+ * replaced too, so accepting gives `d.geo.lat` instead of `d.geo.geo.lat`.
+ * Otherwise only the last segment (the word being typed) is replaced.
+ */
+export function fieldReplaceStart(typedPath: string, field: string): number {
+  const lastDot = typedPath.lastIndexOf(".");
+  const wordStart = lastDot + 1;
+  // Candidate starts: every segment boundary, longest suffix first
+  let start = 0;
+  while (start < wordStart) {
+    const suffix = typedPath.slice(start);
+    if (field.startsWith(suffix) || field.toLowerCase().startsWith(suffix.toLowerCase())) return start;
+    const next = typedPath.indexOf(".", start);
+    if (next === -1) break;
+    start = next + 1;
+  }
+  return wordStart;
+}
+
+/** The dotted identifier path immediately before the cursor (`d.geo.la`). */
+export function typedPathBefore(lineTextBeforeCursor: string): string {
+  return /[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\.?$/.exec(lineTextBeforeCursor)?.[0] ?? "";
+}

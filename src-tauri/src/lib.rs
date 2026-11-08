@@ -366,14 +366,37 @@ fn parse_query_response(http_status: u16, body: &str) -> Result<QueryResult, App
 /// Prefix a statement with EXPLAIN unless it already has one.
 fn build_explain_statement(statement: &str) -> String {
     let trimmed = statement.trim();
-    let first_word = trimmed
-        .split(|c: char| c.is_whitespace())
-        .next()
-        .unwrap_or("");
-    if first_word.eq_ignore_ascii_case("EXPLAIN") {
+    if starts_with_keyword(trimmed, "EXPLAIN") {
         trimmed.to_string()
     } else {
         format!("EXPLAIN {}", trimmed)
+    }
+}
+
+/// Skip leading whitespace, `-- line` and `/* block */` comments.
+fn skip_leading_comments(mut s: &str) -> &str {
+    loop {
+        s = s.trim_start();
+        if let Some(rest) = s.strip_prefix("--") {
+            s = rest.find('\n').map(|i| &rest[i + 1..]).unwrap_or("");
+        } else if let Some(rest) = s.strip_prefix("/*") {
+            s = rest.find("*/").map(|i| &rest[i + 2..]).unwrap_or("");
+        } else {
+            return s;
+        }
+    }
+}
+
+/// True when the first SQL token (after comments) is `keyword`, at a token boundary.
+fn starts_with_keyword(statement: &str, keyword: &str) -> bool {
+    let s = skip_leading_comments(statement);
+    match s.get(..keyword.len()) {
+        Some(head) if head.eq_ignore_ascii_case(keyword) => !s[keyword.len()..]
+            .chars()
+            .next()
+            .map(|c| c.is_alphanumeric() || c == '_' || c == '$')
+            .unwrap_or(false),
+        _ => false,
     }
 }
 
@@ -407,6 +430,12 @@ fn mgmt_error(http_status: u16, body: &str) -> AppError {
         ),
         _ => AppError::Http(format!("HTTP {}: {}", http_status, truncate_body(body))),
     }
+}
+
+/// Collections from a successful scopes response. An empty list is real
+/// (e.g. every collection, `_default` included, was dropped) — do not invent one.
+fn collections_from_scopes_response(bucket: &str, raw: &serde_json::Value) -> Vec<CollectionSchema> {
+    parse_scopes(bucket, raw)
 }
 
 /// Parse `/pools/default/buckets/{bucket}/scopes` into collection entries.
@@ -459,6 +488,17 @@ fn infer_type_name(v: &serde_json::Value) -> String {
     }
 }
 
+/// Union of `|`-separated type lists, keeping first-seen order (`number` + `string|number` → `number|string`).
+fn merge_types(a: &str, b: &str) -> String {
+    let mut types: Vec<&str> = Vec::new();
+    for t in a.split('|').chain(b.split('|')) {
+        if !t.is_empty() && !types.contains(&t) {
+            types.push(t);
+        }
+    }
+    types.join("|")
+}
+
 fn collect_properties(
     props: &serde_json::Map<String, serde_json::Value>,
     prefix: &str,
@@ -471,11 +511,14 @@ fn collect_properties(
         } else {
             format!("{}.{}", prefix, name)
         };
-        if !out.iter().any(|f| f.name == path) {
-            out.push(SchemaField {
+        let ty = infer_type_name(val);
+        match out.iter_mut().find(|f| f.name == path) {
+            // Same field in another flavor: merge the type alternatives
+            Some(existing) => existing.field_type = merge_types(&existing.field_type, &ty),
+            None => out.push(SchemaField {
                 name: path.clone(),
-                field_type: infer_type_name(val),
-            });
+                field_type: ty,
+            }),
         }
         if depth < 4 {
             if let Some(nested) = val["properties"].as_object() {
@@ -594,8 +637,7 @@ async fn get_keyspace_metadata(
         return Err(mgmt_error(http_status.as_u16(), &text));
     }
     let raw: serde_json::Value = serde_json::from_str(&text)?;
-    let schemas = parse_scopes(&bucket, &raw);
-    Ok(if schemas.is_empty() { default_only() } else { schemas })
+    Ok(collections_from_scopes_response(&bucket, &raw))
 }
 
 #[tauri::command]
@@ -1111,5 +1153,34 @@ mod tests {
         assert_eq!(sanitize_file_name("../a/b:c.csv"), "_a_b_c.csv");
         assert_eq!(sanitize_file_name("  "), "export");
         assert_eq!(sanitize_file_name("results.json"), "results.json");
+    }
+
+    // --- Copilot review (PR #11) regressions ---
+
+    #[test]
+    fn explain_detects_keyword_after_comments() {
+        assert_eq!(build_explain_statement("/* note */ EXPLAIN SELECT 1"), "/* note */ EXPLAIN SELECT 1");
+        assert_eq!(build_explain_statement("EXPLAIN/* note */ SELECT 1"), "EXPLAIN/* note */ SELECT 1");
+        assert_eq!(build_explain_statement("-- c\nexplain SELECT 1"), "-- c\nexplain SELECT 1");
+        // Not a keyword boundary: an identifier that merely starts with "explain"
+        assert_eq!(build_explain_statement("explained_view"), "EXPLAIN explained_view");
+        assert_eq!(build_explain_statement("/* x */ SELECT 1"), "EXPLAIN /* x */ SELECT 1");
+    }
+
+    #[test]
+    fn parse_infer_fields_merges_types_across_flavors() {
+        let results = vec![serde_json::json!([
+            { "properties": { "age": {"type": "number"} } },
+            { "properties": { "age": {"type": ["string", "number"]} } }
+        ])];
+        let f = parse_infer_fields(&results);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].field_type, "number|string");
+    }
+
+    #[test]
+    fn scopes_without_collections_stay_empty() {
+        let raw = serde_json::json!({ "scopes": [ { "name": "_default", "collections": [] } ] });
+        assert!(collections_from_scopes_response("b", &raw).is_empty());
     }
 }

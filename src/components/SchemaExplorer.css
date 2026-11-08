@@ -84,7 +84,10 @@
   opacity: 0;
   transition: opacity 0.1s;
 }
-.se-collection:hover .se-action { opacity: 1; }
+.se-collection:hover .se-action,
+.se-collection:focus-within .se-action,
+.se-action:focus-visible { opacity: 1; }
+.se-action:focus-visible { outline: 1px solid var(--accent); border-radius: 3px; }
 .se-action:hover { color: var(--accent); }
 
 .se-fields { list-style: none; padding-left: 26px; }

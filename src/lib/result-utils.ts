@@ -87,7 +87,10 @@ export function toCsv(rows: Row[], columns: string[]): string {
 /** Tab separated — pastes cleanly into spreadsheets. */
 export function toTsv(rows: Row[], columns: string[]): string {
   const clean = (v: unknown) => cellToString(v).replace(/[\t\n\r]+/g, " ");
-  return [columns.join("\t"), ...rows.map((r) => columns.map((c) => clean(r[c])).join("\t"))].join("\n");
+  return [
+    columns.map(clean).join("\t"),
+    ...rows.map((r) => columns.map((c) => clean(r[c])).join("\t")),
+  ].join("\n");
 }
 
 export function truncate(s: string, max: number): string {
