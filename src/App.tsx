@@ -11,6 +11,7 @@ import ParamsPanel from "./components/ParamsPanel";
 import ResizeHandle from "./components/ResizeHandle";
 import AdviseViewer from "./components/AdviseViewer";
 import ShortcutsHelp, { isHelpShortcut } from "./components/ShortcutsHelp";
+import TooltipLayer from "./components/TooltipLayer";
 import { adviseStatement, parseAdvice, type Advice } from "./lib/indexes";
 import { buildParams } from "./lib/params";
 import { migrateConnectionSecrets, applyMigratedSecrets } from "./lib/secrets";
@@ -742,6 +743,7 @@ export default function App() {
         </main>
       </div>
       {showShortcuts && <ShortcutsHelp onClose={() => setShowShortcuts(false)} />}
+      <TooltipLayer />
     </div>
   );
 }
