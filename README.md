@@ -1,6 +1,6 @@
 # ⬡ Nickel Querier — SQL+++ for Couchbase
 
-![Version](https://img.shields.io/badge/version-0.5.0-blue)
+![Version](https://img.shields.io/badge/version-0.5.1-blue)
 
 A stable, workflow-oriented, cross-platform query tool for **Couchbase N1QL / SQL++**.
 

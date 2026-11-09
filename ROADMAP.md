@@ -64,12 +64,13 @@ This document tracks completed work and planned features across all versions.
 - [x] **Native Save-as Export**, saved-query import/export, connection shown in history
 - [x] **Keyboard Shortcut Cheat-Sheet** (`Ctrl/⌘ + ?`) and keyspace autocomplete
 
-## ✅ v0.5 — Collaboration & Productivity (Current Release — v0.5.0)
+## ✅ v0.5 — Collaboration & Productivity (Current Release — v0.5.1)
 
 - [x] **Query Plan Diff** — Pin an EXPLAIN plan as baseline and compare the next one side by side (added / removed / changed operators, index summary)
 - [x] **Folder / Tag Organisation** — Nested folders for saved queries with drag-and-drop (and keyboard) moves; tag filter bar
 - [x] **Query Sharing** — `nickelquerier://query?…` links for saved queries; paste a link to open it in a new tab
 - [x] **Clipboard History** — Recently copied editor fragments in a popover (`Ctrl/⌘ + Shift + V`)
+- [x] **v0.5.1** — Tooltips stay inside the window, flip below the top bar and show on keyboard focus ([#16](https://github.com/sirfi/nickel-querier/issues/16))
 
 ## 🔜 v0.6 — Planned
 
